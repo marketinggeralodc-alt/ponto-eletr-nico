@@ -5,7 +5,7 @@ import * as XLSX from "xlsx"
 import { FileUpload } from "@/components/file-upload"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { processarRelogio, gerarTabelaDados, type DadosPonto } from "@/lib/ponto-utils"
+import { processarRelogio, gerarTabelaDadosExcel, type DadosPonto } from "@/lib/ponto-utils"
 import { Download, Clock, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Users, Calendar, Info, ChevronDown, ChevronUp } from "lucide-react"
 
 type Step = "upload" | "preview" | "result"
@@ -23,7 +23,7 @@ export default function PontoPage() {
   const [relogioFile, setRelogioFile] = useState<File | null>(null)
   const [processing, setProcessing] = useState(false)
   const [previewData, setPreviewData] = useState<ProcessingResult | null>(null)
-  const [finalWorkbook, setFinalWorkbook] = useState<XLSX.WorkBook | null>(null)
+  const [finalBuffer, setFinalBuffer] = useState<Buffer | null>(null)
   const [showDebug, setShowDebug] = useState(false)
 
   const handleProcessar = useCallback(async () => {
@@ -54,14 +54,14 @@ export default function PontoPage() {
     setProcessing(false)
   }, [relogioFile])
 
-  const handleGerarTabela = useCallback(() => {
+  const handleGerarTabela = useCallback(async () => {
     if (!previewData || previewData.dados.length === 0) return
 
     setProcessing(true)
 
     try {
-      const workbook = gerarTabelaDados(previewData.dados, previewData.mesAno)
-      setFinalWorkbook(workbook)
+      const buffer = await gerarTabelaDadosExcel(previewData.dados, previewData.mesAno)
+      setFinalBuffer(buffer)
       setStep("result")
     } catch (error) {
       console.error("[v0] Erro ao gerar tabela:", error)
@@ -71,26 +71,25 @@ export default function PontoPage() {
   }, [previewData])
 
   const handleDownload = useCallback(() => {
-    if (!finalWorkbook) return
+    if (!finalBuffer) return
 
-    const wbout = XLSX.write(finalWorkbook, { bookType: "xlsx", type: "array" })
-    const blob = new Blob([wbout], { type: "application/octet-stream" })
+    const blob = new Blob([finalBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
     const url = URL.createObjectURL(blob)
 
     const a = document.createElement("a")
     a.href = url
-    a.download = `Dados_Ponto_${previewData?.mesAno?.replace("/", "-") || "extraidos"}.xlsx`
+    a.download = `Ponto_${previewData?.mesAno?.replace("/", "-") || "extraidos"}.xlsx`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }, [finalWorkbook, previewData?.mesAno])
+  }, [finalBuffer, previewData?.mesAno])
 
   const handleReset = useCallback(() => {
     setStep("upload")
     setRelogioFile(null)
     setPreviewData(null)
-    setFinalWorkbook(null)
+    setFinalBuffer(null)
     setShowDebug(false)
   }, [])
 
@@ -459,7 +458,7 @@ export default function PontoPage() {
                 <Button variant="outline" onClick={handleReset} className="flex-1">
                   Processar Outro Arquivo
                 </Button>
-                <Button onClick={handleDownload} disabled={!finalWorkbook} className="flex-1 bg-emerald-600 hover:bg-emerald-700">
+                <Button onClick={handleDownload} disabled={!finalBuffer} className="flex-1 bg-emerald-600 hover:bg-emerald-700">
                   <Download className="mr-2 h-4 w-4" />
                   Baixar Planilha Inteligente
                 </Button>
