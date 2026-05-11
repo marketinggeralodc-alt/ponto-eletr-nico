@@ -12,6 +12,120 @@ export interface DadosPonto {
   status: string
 }
 
+// Lista de feriados nacionais brasileiros (fixos)
+// Formato: "DD/MM"
+const FERIADOS_FIXOS = [
+  "01/01", // Confraternização Universal
+  "21/04", // Tiradentes
+  "01/05", // Dia do Trabalho
+  "07/09", // Independência do Brasil
+  "12/10", // Nossa Senhora Aparecida
+  "02/11", // Finados
+  "15/11", // Proclamação da República
+  "25/12", // Natal
+]
+
+// Feriados móveis para anos específicos (Carnaval, Sexta-feira Santa, Corpus Christi)
+// Precisa ser atualizado manualmente ou calculado
+const FERIADOS_MOVEIS: Record<number, string[]> = {
+  2024: [
+    "12/02", "13/02", // Carnaval
+    "29/03", // Sexta-feira Santa
+    "30/05", // Corpus Christi
+  ],
+  2025: [
+    "03/03", "04/03", // Carnaval
+    "18/04", // Sexta-feira Santa
+    "19/06", // Corpus Christi
+  ],
+  2026: [
+    "16/02", "17/02", // Carnaval
+    "03/04", // Sexta-feira Santa
+    "04/06", // Corpus Christi
+  ],
+}
+
+// Verifica se uma data é feriado
+export function verificarFeriado(dia: number, mes: number, ano: number): { isFeriado: boolean; nome?: string } {
+  const dataStr = `${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}`
+  
+  // Verifica feriados fixos
+  const feriadosFixosNomes: Record<string, string> = {
+    "01/01": "Confraternização Universal",
+    "21/04": "Tiradentes",
+    "01/05": "Dia do Trabalho",
+    "07/09": "Independência do Brasil",
+    "12/10": "Nossa Senhora Aparecida",
+    "02/11": "Finados",
+    "15/11": "Proclamação da República",
+    "25/12": "Natal",
+  }
+  
+  if (FERIADOS_FIXOS.includes(dataStr)) {
+    return { isFeriado: true, nome: feriadosFixosNomes[dataStr] }
+  }
+  
+  // Verifica feriados móveis do ano
+  const feriadosMoveis = FERIADOS_MOVEIS[ano] || []
+  if (feriadosMoveis.includes(dataStr)) {
+    return { isFeriado: true, nome: "Feriado Móvel" }
+  }
+  
+  return { isFeriado: false }
+}
+
+// Calcula duração do almoço em minutos
+export function calcularDuracaoAlmoco(saida1: string, entrada2: string): number {
+  if (!saida1 || !entrada2) return 0
+  
+  const minutosSaida = horarioParaMinutos(saida1)
+  const minutosEntrada = horarioParaMinutos(entrada2)
+  
+  if (minutosSaida < 0 || minutosEntrada < 0) return 0
+  
+  return minutosEntrada - minutosSaida
+}
+
+// Calcula total de horas trabalhadas em minutos
+export function calcularHorasTrabalhadas(entrada1: string, saida1: string, entrada2: string, saida2: string): number {
+  let total = 0
+  
+  if (entrada1 && saida1) {
+    const min1 = horarioParaMinutos(entrada1)
+    const min2 = horarioParaMinutos(saida1)
+    if (min1 >= 0 && min2 >= 0) {
+      total += min2 - min1
+    }
+  }
+  
+  if (entrada2 && saida2) {
+    const min3 = horarioParaMinutos(entrada2)
+    const min4 = horarioParaMinutos(saida2)
+    if (min3 >= 0 && min4 >= 0) {
+      total += min4 - min3
+    }
+  }
+  
+  // Se só tem entrada1 e saida2 (sem almoço registrado)
+  if (entrada1 && saida2 && !saida1 && !entrada2) {
+    const min1 = horarioParaMinutos(entrada1)
+    const min4 = horarioParaMinutos(saida2)
+    if (min1 >= 0 && min4 >= 0) {
+      total = min4 - min1
+    }
+  }
+  
+  return total
+}
+
+// Formata minutos para HH:MM (suporta valores negativos)
+export function minutosParaHorario(minutos: number): string {
+  const horas = Math.floor(Math.abs(minutos) / 60)
+  const mins = Math.abs(minutos) % 60
+  const sinal = minutos < 0 ? "-" : ""
+  return `${sinal}${String(horas).padStart(2, "0")}:${String(mins).padStart(2, "0")}`
+}
+
 export interface ResultadoProcessamento {
   dados: DadosPonto[]
   funcionarios: string[]
@@ -391,20 +505,263 @@ export function processarRelogio(workbook: XLSX.WorkBook): ResultadoProcessament
   }
 }
 
-// Gera tabela de dados simples para usar com PROCV no Excel
+// Gera tabela de dados completa com cálculos de horas extras
 export function gerarTabelaDados(
   dados: DadosPonto[],
   mesAno: string
 ): XLSX.WorkBook {
-  // Ordena por nome e dia
+  const wb = XLSX.utils.book_new()
+  
+  // Extrai mês e ano do mesAno (formato "MM/YYYY")
+  const [mesStr, anoStr] = mesAno.split("/")
+  const mes = parseInt(mesStr) || new Date().getMonth() + 1
+  const ano = parseInt(anoStr) || new Date().getFullYear()
+  
+  // Obtém o número de dias no mês
+  const diasNoMes = new Date(ano, mes, 0).getDate()
+  
+  // Agrupa dados por funcionário
+  const funcionarios = [...new Set(dados.map(d => d.nome))]
+  
+  // Cria uma aba completa para cada funcionário
+  for (const func of funcionarios) {
+    const dadosFunc = dados.filter(d => d.nome === func)
+    const dadosPorDia: Record<number, DadosPonto> = {}
+    for (const d of dadosFunc) {
+      dadosPorDia[d.dia] = d
+    }
+    
+    // Cria estrutura da planilha do funcionário
+    const linhas: (string | number)[][] = []
+    
+    // Cabeçalho com informações do funcionário
+    linhas.push(["FOLHA DE PONTO - " + mesAno])
+    linhas.push([])
+    linhas.push(["NOME:", func.toUpperCase(), "", "FUNÇÃO:", ""])
+    linhas.push([])
+    
+    // Cabeçalho da tabela (linha 5 - índice 4)
+    linhas.push([
+      "DIA",
+      "DIA SEMANA",
+      "ENTRADA 1",
+      "SAÍDA ALMOÇO",
+      "ENTRADA 2",
+      "SAÍDA",
+      "TOTAL HORAS",
+      "HORAS EXTRAS",
+      "FERIADO/OBS",
+      "ALERTA"
+    ])
+    
+    // Jornada padrão em minutos (8 horas)
+    const JORNADA_PADRAO = 8 * 60
+    const ALMOCO_MINIMO = 60 // 1 hora
+    
+    let totalHorasExtras = 0
+    const alertas: string[] = []
+    const observacoesSistema: string[] = []
+    
+    // Preenche cada dia do mês
+    for (let dia = 1; dia <= diasNoMes; dia++) {
+      const dataAtual = new Date(ano, mes - 1, dia)
+      const diaSemana = dataAtual.getDay()
+      const diasSemanaTexto = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"]
+      const diaSemanaStr = diasSemanaTexto[diaSemana]
+      
+      const registro = dadosPorDia[dia]
+      const feriado = verificarFeriado(dia, mes, ano)
+      const isDomingo = diaSemana === 0
+      const isSabado = diaSemana === 6
+      
+      let entrada1 = ""
+      let saida1 = ""
+      let entrada2 = ""
+      let saida2 = ""
+      let totalHoras = ""
+      let horasExtras = ""
+      let feriadoObs = ""
+      let alerta = ""
+      
+      if (registro) {
+        entrada1 = registro.entrada1
+        saida1 = registro.saida1
+        entrada2 = registro.entrada2
+        saida2 = registro.saida2
+        
+        // Calcula total de horas trabalhadas
+        const minutosTrabalhados = calcularHorasTrabalhadas(entrada1, saida1, entrada2, saida2)
+        
+        if (minutosTrabalhados > 0) {
+          totalHoras = minutosParaHorario(minutosTrabalhados)
+          
+          // Calcula horas extras
+          if (isDomingo || isSabado || feriado.isFeriado) {
+            // Fim de semana ou feriado: todas as horas são extras
+            if (minutosTrabalhados > 0) {
+              horasExtras = minutosParaHorario(minutosTrabalhados)
+              totalHorasExtras += minutosTrabalhados
+            }
+          } else {
+            // Dia normal: horas extras são as que excedem a jornada
+            const extras = minutosTrabalhados - JORNADA_PADRAO
+            if (extras > 0) {
+              horasExtras = minutosParaHorario(extras)
+              totalHorasExtras += extras
+            } else if (extras < 0) {
+              // Horas faltantes (negativo)
+              horasExtras = minutosParaHorario(extras)
+            }
+          }
+        }
+        
+        // Verifica duração do almoço
+        const duracaoAlmoco = calcularDuracaoAlmoco(saida1, entrada2)
+        if (duracaoAlmoco > 0 && duracaoAlmoco < ALMOCO_MINIMO) {
+          alerta = `ALMOÇO < 1h (${minutosParaHorario(duracaoAlmoco)})`
+          alertas.push(`Dia ${dia}: Almoço de apenas ${minutosParaHorario(duracaoAlmoco)}`)
+        }
+        
+        // Verifica registro incompleto
+        if (registro.status.includes("Incompleto")) {
+          if (alerta) alerta += " | "
+          alerta += registro.status
+          observacoesSistema.push(`Dia ${dia}: ${registro.status}`)
+        }
+      }
+      
+      // Define observação de feriado/fim de semana
+      if (feriado.isFeriado) {
+        feriadoObs = `FERIADO: ${feriado.nome}`
+      } else if (isDomingo) {
+        feriadoObs = "DOMINGO"
+      } else if (isSabado) {
+        feriadoObs = "SÁBADO"
+      }
+      
+      linhas.push([
+        dia,
+        diaSemanaStr,
+        entrada1,
+        saida1,
+        entrada2,
+        saida2,
+        totalHoras,
+        horasExtras,
+        feriadoObs,
+        alerta
+      ])
+    }
+    
+    // Linha de totais (após os dias)
+    linhas.push([])
+    linhas.push(["", "", "", "", "", "TOTAL HORAS EXTRAS:", minutosParaHorario(totalHorasExtras), "", "", ""])
+    
+    // Seção de observações
+    linhas.push([])
+    linhas.push(["OBSERVAÇÕES DO SISTEMA:"])
+    
+    if (alertas.length > 0) {
+      linhas.push(["ALERTAS DE ALMOÇO:"])
+      for (const alerta of alertas) {
+        linhas.push([alerta])
+      }
+    }
+    
+    if (observacoesSistema.length > 0) {
+      linhas.push([])
+      linhas.push(["REGISTROS INCOMPLETOS:"])
+      for (const obs of observacoesSistema) {
+        linhas.push([obs])
+      }
+    }
+    
+    // Espaço para observações manuais
+    linhas.push([])
+    linhas.push(["OUTRAS OBSERVAÇÕES:"])
+    linhas.push([""])
+    linhas.push([""])
+    linhas.push([""])
+    
+    // Assinatura
+    linhas.push([])
+    linhas.push(["", "", "", "___________________________"])
+    linhas.push(["", "", "", "Assinatura do Funcionário"])
+    
+    // Cria worksheet
+    const ws = XLSX.utils.aoa_to_sheet(linhas)
+    
+    // Define largura das colunas
+    ws["!cols"] = [
+      { wch: 6 },   // DIA
+      { wch: 10 },  // DIA SEMANA
+      { wch: 12 },  // ENTRADA 1
+      { wch: 14 },  // SAÍDA ALMOÇO
+      { wch: 12 },  // ENTRADA 2
+      { wch: 10 },  // SAÍDA
+      { wch: 12 },  // TOTAL HORAS
+      { wch: 12 },  // HORAS EXTRAS
+      { wch: 25 },  // FERIADO/OBS
+      { wch: 30 },  // ALERTA
+    ]
+    
+    // Merge para o título
+    ws["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }, // Título
+      { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } }, // Nome
+      { s: { r: 2, c: 4 }, e: { r: 2, c: 6 } }, // Função
+    ]
+    
+    // Limita nome da aba a 31 caracteres
+    const nomeAba = func.substring(0, 31).toUpperCase()
+    XLSX.utils.book_append_sheet(wb, ws, nomeAba)
+  }
+  
+  // Cria aba de resumo geral
+  const resumoLinhas: (string | number)[][] = []
+  resumoLinhas.push(["RESUMO DE HORAS EXTRAS - " + mesAno])
+  resumoLinhas.push([])
+  resumoLinhas.push(["FUNCIONÁRIO", "TOTAL HORAS EXTRAS", "OBSERVAÇÕES"])
+  
+  for (const func of funcionarios) {
+    const dadosFunc = dados.filter(d => d.nome === func)
+    let totalExtras = 0
+    
+    for (const d of dadosFunc) {
+      const dataAtual = new Date(d.ano, d.mes - 1, d.dia)
+      const diaSemana = dataAtual.getDay()
+      const feriado = verificarFeriado(d.dia, d.mes, d.ano)
+      
+      const minutosTrabalhados = calcularHorasTrabalhadas(d.entrada1, d.saida1, d.entrada2, d.saida2)
+      
+      if (diaSemana === 0 || diaSemana === 6 || feriado.isFeriado) {
+        totalExtras += minutosTrabalhados
+      } else {
+        const extras = minutosTrabalhados - (8 * 60)
+        if (extras > 0) totalExtras += extras
+      }
+    }
+    
+    resumoLinhas.push([func.toUpperCase(), minutosParaHorario(totalExtras), ""])
+  }
+  
+  const wsResumo = XLSX.utils.aoa_to_sheet(resumoLinhas)
+  wsResumo["!cols"] = [
+    { wch: 25 },  // FUNCIONÁRIO
+    { wch: 20 },  // TOTAL HORAS EXTRAS
+    { wch: 40 },  // OBSERVAÇÕES
+  ]
+  
+  XLSX.utils.book_append_sheet(wb, wsResumo, "RESUMO")
+  
+  // Cria aba com dados brutos (para PROCV)
   const dadosOrdenados = [...dados].sort((a, b) => {
     const nomeCompare = a.nome.localeCompare(b.nome)
     if (nomeCompare !== 0) return nomeCompare
     return a.dia - b.dia
   })
-
-  // Cria planilha com cabeçalhos
-  const cabecalhos = [
+  
+  const cabecalhosDados = [
     "FUNCIONARIO",
     "DIA",
     "CHAVE_PROCV",
@@ -414,14 +771,12 @@ export function gerarTabelaDados(
     "SAIDA_2",
     "STATUS"
   ]
-
-  const linhas: (string | number)[][] = [cabecalhos]
-
+  
+  const linhasDados: (string | number)[][] = [cabecalhosDados]
+  
   for (const d of dadosOrdenados) {
-    // Chave para PROCV: NOME_DIA (ex: "WYNER_7")
     const chaveProcv = `${d.nome.toUpperCase()}_${d.dia}`
-    
-    linhas.push([
+    linhasDados.push([
       d.nome.toUpperCase(),
       d.dia,
       chaveProcv,
@@ -432,12 +787,9 @@ export function gerarTabelaDados(
       d.status
     ])
   }
-
-  // Cria workbook
-  const ws = XLSX.utils.aoa_to_sheet(linhas)
-
-  // Define largura das colunas
-  ws["!cols"] = [
+  
+  const wsDados = XLSX.utils.aoa_to_sheet(linhasDados)
+  wsDados["!cols"] = [
     { wch: 20 }, // FUNCIONARIO
     { wch: 6 },  // DIA
     { wch: 25 }, // CHAVE_PROCV
@@ -447,80 +799,55 @@ export function gerarTabelaDados(
     { wch: 10 }, // SAIDA_2
     { wch: 20 }, // STATUS
   ]
-
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, "Dados_Ponto")
-
-  // Adiciona aba com instruções
-  const instrucoes = [
-    ["COMO USAR ESTA TABELA NO EXCEL"],
-    [""],
-    ["Esta tabela contém os dados extraídos do relógio de ponto."],
-    ["Use a fórmula PROCV para preencher sua folha de ponto."],
-    [""],
-    ["PASSO A PASSO:"],
-    [""],
-    ["1. Abra sua folha de ponto original"],
-    ["2. Cole esta tabela em uma aba separada (ex: 'Dados')"],
-    ["3. Na sua folha de ponto, use estas fórmulas:"],
-    [""],
-    ["Para ENTRADA (coluna B):"],
-    ['=PROCV($A6&"_"&DIA($A6);Dados!$C:$H;2;FALSO)'],
-    [""],
-    ["Para SAÍDA ALMOÇO (coluna C):"],
-    ['=PROCV($A6&"_"&DIA($A6);Dados!$C:$H;3;FALSO)'],
-    [""],
-    ["Para ENTRADA TARDE (coluna E):"],
-    ['=PROCV($A6&"_"&DIA($A6);Dados!$C:$H;4;FALSO)'],
-    [""],
-    ["Para SAÍDA (coluna F):"],
-    ['=PROCV($A6&"_"&DIA($A6);Dados!$C:$H;5;FALSO)'],
-    [""],
-    ["DICA: A coluna CHAVE_PROCV combina NOME_DIA."],
-    ["Ajuste a fórmula conforme o nome da aba do funcionário."],
-    [""],
-    ["Exemplo para WYNER no dia 7:"],
-    ['=PROCV("WYNER_7";Dados!$C:$H;2;FALSO)'],
-  ]
-
-  const wsInstrucoes = XLSX.utils.aoa_to_sheet(instrucoes)
-  wsInstrucoes["!cols"] = [{ wch: 60 }]
-  XLSX.utils.book_append_sheet(wb, wsInstrucoes, "Instrucoes")
-
-  // Adiciona aba por funcionário para facilitar
-  const funcionarios = [...new Set(dados.map(d => d.nome))]
   
-  for (const func of funcionarios) {
-    const dadosFunc = dadosOrdenados.filter(d => d.nome === func)
-    const linhasFunc: (string | number)[][] = [
-      ["DIA", "ENTRADA_1", "SAIDA_1", "ENTRADA_2", "SAIDA_2", "STATUS"]
-    ]
-    
-    for (const d of dadosFunc) {
-      linhasFunc.push([
-        d.dia,
-        d.entrada1,
-        d.saida1,
-        d.entrada2,
-        d.saida2,
-        d.status
-      ])
-    }
-    
-    const wsFunc = XLSX.utils.aoa_to_sheet(linhasFunc)
-    wsFunc["!cols"] = [
-      { wch: 6 },  // DIA
-      { wch: 10 }, // ENTRADA_1
-      { wch: 10 }, // SAIDA_1
-      { wch: 10 }, // ENTRADA_2
-      { wch: 10 }, // SAIDA_2
-      { wch: 20 }, // STATUS
-    ]
-    
-    // Limita nome da aba a 31 caracteres (limite do Excel)
-    const nomeAba = func.substring(0, 31).toUpperCase()
-    XLSX.utils.book_append_sheet(wb, wsFunc, nomeAba)
-  }
+  XLSX.utils.book_append_sheet(wb, wsDados, "Dados_PROCV")
+  
+  // Aba de instruções
+  const instrucoes = [
+    ["INSTRUÇÕES DE USO"],
+    [""],
+    ["Esta planilha contém:"],
+    [""],
+    ["1. Uma aba para cada funcionário com:"],
+    ["   - Espaço para nome e função"],
+    ["   - Todos os dias do mês com horários"],
+    ["   - Cálculo automático de horas trabalhadas"],
+    ["   - Cálculo de horas extras (positivas e negativas)"],
+    ["   - Identificação de feriados, sábados e domingos"],
+    ["   - Alertas quando almoço for menor que 1 hora"],
+    ["   - Total de horas extras do mês"],
+    ["   - Espaço para observações"],
+    [""],
+    ["2. Aba RESUMO com total de horas extras de cada funcionário"],
+    [""],
+    ["3. Aba Dados_PROCV para usar com fórmulas PROCV"],
+    [""],
+    ["LEGENDA:"],
+    ["- FERIADO: Dia é feriado nacional"],
+    ["- SÁBADO/DOMINGO: Fim de semana"],
+    ["- ALMOÇO < 1h: Intervalo de almoço menor que 1 hora"],
+    ["- Incompleto: Faltam batidas no registro"],
+    [""],
+    ["OBSERVAÇÕES:"],
+    ["- Horas extras em feriados/fins de semana = todas as horas trabalhadas"],
+    ["- Horas extras em dias normais = horas além de 8h"],
+    ["- Valores negativos indicam horas faltantes"],
+    [""],
+    ["FERIADOS CONSIDERADOS:"],
+    ["- 01/01: Confraternização Universal"],
+    ["- 21/04: Tiradentes"],
+    ["- 01/05: Dia do Trabalho"],
+    ["- 07/09: Independência do Brasil"],
+    ["- 12/10: Nossa Senhora Aparecida"],
+    ["- 02/11: Finados"],
+    ["- 15/11: Proclamação da República"],
+    ["- 25/12: Natal"],
+    ["- Carnaval, Sexta-feira Santa, Corpus Christi (2024-2026)"],
+  ]
+  
+  const wsInstrucoes = XLSX.utils.aoa_to_sheet(instrucoes)
+  wsInstrucoes["!cols"] = [{ wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, wsInstrucoes, "Instrucoes")
 
   return wb
 }

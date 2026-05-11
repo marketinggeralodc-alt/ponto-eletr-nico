@@ -106,7 +106,7 @@ export default function PontoPage() {
             <h1 className="text-2xl font-bold text-foreground">Extrator de Ponto</h1>
           </div>
           <p className="text-muted-foreground">
-            Extraia os dados do relógio e gere uma tabela para usar com PROCV no Excel
+            Extraia os dados do relógio e gere uma planilha completa com cálculo de horas extras
           </p>
         </div>
 
@@ -171,8 +171,8 @@ export default function PontoPage() {
                     <p className="font-medium">Como funciona:</p>
                     <ol className="mt-2 list-inside list-decimal space-y-1 text-blue-700 dark:text-blue-300">
                       <li>Faça upload do arquivo do relógio de ponto</li>
-                      <li>O sistema extrai os horários de cada funcionário</li>
-                      <li>Baixe a tabela de dados e use com PROCV no Excel</li>
+                      <li>O sistema extrai e calcula horas trabalhadas/extras</li>
+                      <li>Baixe a planilha completa com alertas e observações</li>
                     </ol>
                   </div>
                 </div>
@@ -327,6 +327,22 @@ export default function PontoPage() {
                 </div>
               )}
 
+              {/* Info sobre funcionalidades */}
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <div className="text-sm text-emerald-800 dark:text-emerald-200">
+                    <p className="font-medium">A planilha gerada incluirá:</p>
+                    <ul className="mt-2 list-inside list-disc space-y-1 text-emerald-700 dark:text-emerald-300">
+                      <li>Cálculo automático de horas extras</li>
+                      <li>Identificação de feriados e fins de semana</li>
+                      <li>Alertas de almoço menor que 1 hora</li>
+                      <li>Espaço para nome, função e observações</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
               {/* Debug logs toggle */}
               {previewData.debug.length > 0 && (
                 <div className="rounded-lg border bg-muted/50 p-4">
@@ -403,23 +419,26 @@ export default function PontoPage() {
                   <div className="text-sm text-blue-800 dark:text-blue-200">
                     <p className="font-medium">O arquivo contém:</p>
                     <ul className="mt-2 list-inside list-disc space-y-1 text-blue-700 dark:text-blue-300">
-                      <li>Aba &quot;Dados_Ponto&quot; com todos os registros</li>
-                      <li>Aba &quot;Instrucoes&quot; com fórmulas PROCV prontas</li>
-                      <li>Uma aba para cada funcionário com seus horários</li>
+                      <li>Uma aba completa para cada funcionário com cálculos</li>
+                      <li>Aba &quot;RESUMO&quot; com total de horas extras de todos</li>
+                      <li>Aba &quot;Dados_PROCV&quot; para usar com fórmulas</li>
+                      <li>Aba &quot;Instrucoes&quot; com explicações detalhadas</li>
                     </ul>
                   </div>
                 </div>
               </div>
 
-              {/* Instruções rápidas */}
+              {/* Funcionalidades */}
               <div className="rounded-lg bg-muted p-4">
-                <h3 className="mb-2 font-medium">Como usar no Excel:</h3>
-                <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
-                  <li>Abra sua folha de ponto original</li>
-                  <li>Cole a aba &quot;Dados_Ponto&quot; em uma nova aba</li>
-                  <li>Use PROCV para buscar os horários automaticamente</li>
-                  <li>Veja a aba &quot;Instrucoes&quot; para exemplos de fórmulas</li>
-                </ol>
+                <h3 className="mb-2 font-medium">Funcionalidades da planilha:</h3>
+                <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
+                  <li>Cálculo automático de horas extras (diárias e mensais)</li>
+                  <li>Identificação de feriados nacionais</li>
+                  <li>Alerta quando almoço for menor que 1 hora</li>
+                  <li>Espaço para nome, função e observações</li>
+                  <li>Identificação de registros incompletos</li>
+                  <li>Campo para assinatura do funcionário</li>
+                </ul>
               </div>
 
               <div className="flex gap-3">
