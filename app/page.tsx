@@ -332,12 +332,14 @@ export default function PontoPage() {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
                   <div className="text-sm text-emerald-800 dark:text-emerald-200">
-                    <p className="font-medium">A planilha gerada incluirá:</p>
+                    <p className="font-medium">A planilha inteligente incluirá:</p>
                     <ul className="mt-2 list-inside list-disc space-y-1 text-emerald-700 dark:text-emerald-300">
-                      <li>Cálculo automático de horas extras</li>
-                      <li>Identificação de feriados e fins de semana</li>
+                      <li>Fórmulas Excel para cálculos automáticos editáveis</li>
+                      <li>Cores: verde (OK), vermelho (falta), amarelo (alerta), roxo (feriado)</li>
+                      <li>Coluna de justificativas para faltas (atestado, férias, etc.)</li>
+                      <li>Identificação automática de dias sem registro</li>
                       <li>Alertas de almoço menor que 1 hora</li>
-                      <li>Espaço para nome, função e observações</li>
+                      <li>Resumo geral com totais de todos funcionários</li>
                     </ul>
                   </div>
                 </div>
@@ -398,7 +400,7 @@ export default function PontoPage() {
                 <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                 Tabela Gerada com Sucesso
               </CardTitle>
-              <CardDescription>Baixe a tabela e use com PROCV no Excel</CardDescription>
+              <CardDescription>Baixe a planilha inteligente com fórmulas e cores</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
               {/* Stats */}
@@ -412,32 +414,44 @@ export default function PontoPage() {
                 </div>
               </div>
 
-              {/* Info sobre o arquivo */}
+              {/* Legenda de cores */}
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
                 <div className="flex items-start gap-2">
                   <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
                   <div className="text-sm text-blue-800 dark:text-blue-200">
-                    <p className="font-medium">O arquivo contém:</p>
-                    <ul className="mt-2 list-inside list-disc space-y-1 text-blue-700 dark:text-blue-300">
-                      <li>Uma aba completa para cada funcionário com cálculos</li>
-                      <li>Aba &quot;RESUMO&quot; com total de horas extras de todos</li>
-                      <li>Aba &quot;Dados_PROCV&quot; para usar com fórmulas</li>
-                      <li>Aba &quot;Instrucoes&quot; com explicações detalhadas</li>
-                    </ul>
+                    <p className="font-medium">Legenda de Cores na Planilha:</p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-blue-700 dark:text-blue-300">
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-green-400"></span>
+                        <span>Verde = Dia OK</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-red-400"></span>
+                        <span>Vermelho = Sem registro</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-yellow-400"></span>
+                        <span>Amarelo = Alerta/Incompleto</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-purple-400"></span>
+                        <span>Roxo = Feriado/Fim de semana</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Funcionalidades */}
               <div className="rounded-lg bg-muted p-4">
-                <h3 className="mb-2 font-medium">Funcionalidades da planilha:</h3>
+                <h3 className="mb-2 font-medium">Funcionalidades da planilha inteligente:</h3>
                 <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
-                  <li>Cálculo automático de horas extras (diárias e mensais)</li>
-                  <li>Identificação de feriados nacionais</li>
-                  <li>Alerta quando almoço for menor que 1 hora</li>
-                  <li>Espaço para nome, função e observações</li>
-                  <li>Identificação de registros incompletos</li>
-                  <li>Campo para assinatura do funcionário</li>
+                  <li>Fórmulas Excel editáveis (altere horários e os cálculos atualizam)</li>
+                  <li>Coluna de justificativa para faltas (atestado, férias, folga, etc.)</li>
+                  <li>Jornada configurável (padrão 8h, editável na célula H3)</li>
+                  <li>Aba RESUMO com totais e referências às abas individuais</li>
+                  <li>Campos para assinatura do funcionário e responsável</li>
+                  <li>Aba Dados_PROCV para integração com outras planilhas</li>
                 </ul>
               </div>
 
@@ -445,9 +459,9 @@ export default function PontoPage() {
                 <Button variant="outline" onClick={handleReset} className="flex-1">
                   Processar Outro Arquivo
                 </Button>
-                <Button onClick={handleDownload} disabled={!finalWorkbook} className="flex-1">
+                <Button onClick={handleDownload} disabled={!finalWorkbook} className="flex-1 bg-emerald-600 hover:bg-emerald-700">
                   <Download className="mr-2 h-4 w-4" />
-                  Baixar Tabela
+                  Baixar Planilha Inteligente
                 </Button>
               </div>
             </CardContent>

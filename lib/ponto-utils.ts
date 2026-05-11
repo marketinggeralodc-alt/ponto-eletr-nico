@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx"
+import XLSX from "xlsx-js-style"
 
 export interface DadosPonto {
   nome: string
@@ -505,7 +505,68 @@ export function processarRelogio(workbook: XLSX.WorkBook): ResultadoProcessament
   }
 }
 
-// Gera tabela de dados completa com cálculos de horas extras
+// Tipos de estilo para xlsx-js-style
+interface CellStyle {
+  font?: { bold?: boolean; color?: { rgb: string }; sz?: number; name?: string }
+  fill?: { fgColor: { rgb: string }; patternType?: string }
+  alignment?: { horizontal?: string; vertical?: string; wrapText?: boolean }
+  border?: {
+    top?: { style: string; color: { rgb: string } }
+    bottom?: { style: string; color: { rgb: string } }
+    left?: { style: string; color: { rgb: string } }
+    right?: { style: string; color: { rgb: string } }
+  }
+  numFmt?: string
+}
+
+interface StyledCell {
+  v: string | number
+  t?: string
+  f?: string
+  s?: CellStyle
+}
+
+// Cores do tema
+const CORES = {
+  VERDE_ESCURO: "1B5E20",      // Cabeçalho verde escuro
+  VERDE_CLARO: "C8E6C9",       // Fundo verde claro (OK)
+  VERDE_TEXTO: "2E7D32",       // Texto verde
+  VERMELHO_ESCURO: "B71C1C",   // Texto vermelho erro
+  VERMELHO_CLARO: "FFCDD2",    // Fundo vermelho claro (erro)
+  AMARELO_CLARO: "FFF9C4",     // Fundo amarelo (alerta)
+  AMARELO_ESCURO: "F57F17",    // Texto amarelo escuro
+  AZUL_ESCURO: "0D47A1",       // Cabeçalho azul
+  AZUL_CLARO: "BBDEFB",        // Fundo azul claro
+  CINZA_CLARO: "F5F5F5",       // Fundo alternado
+  CINZA_MEDIO: "E0E0E0",       // Bordas
+  BRANCO: "FFFFFF",
+  PRETO: "000000",
+  ROXO_CLARO: "E1BEE7",        // Feriado/Fim de semana
+  ROXO_ESCURO: "6A1B9A",       // Texto feriado
+}
+
+// Borda padrão
+const BORDA_FINA: CellStyle["border"] = {
+  top: { style: "thin", color: { rgb: CORES.CINZA_MEDIO } },
+  bottom: { style: "thin", color: { rgb: CORES.CINZA_MEDIO } },
+  left: { style: "thin", color: { rgb: CORES.CINZA_MEDIO } },
+  right: { style: "thin", color: { rgb: CORES.CINZA_MEDIO } },
+}
+
+// Opções de justificativa de falta
+const JUSTIFICATIVAS = [
+  "ATESTADO MÉDICO",
+  "FÉRIAS",
+  "FOLGA COMPENSATÓRIA",
+  "LICENÇA",
+  "FALTA JUSTIFICADA",
+  "FALTA NÃO JUSTIFICADA",
+  "TRABALHO EXTERNO",
+  "HOME OFFICE",
+  "OUTRO"
+]
+
+// Gera tabela de dados completa com fórmulas, estilos e cores
 export function gerarTabelaDados(
   dados: DadosPonto[],
   mesAno: string
@@ -520,6 +581,14 @@ export function gerarTabelaDados(
   // Obtém o número de dias no mês
   const diasNoMes = new Date(ano, mes, 0).getDate()
   
+  // Lista de feriados do mês para referência nas fórmulas
+  const feriadosDoMes: number[] = []
+  for (let d = 1; d <= diasNoMes; d++) {
+    if (verificarFeriado(d, mes, ano).isFeriado) {
+      feriadosDoMes.push(d)
+    }
+  }
+  
   // Agrupa dados por funcionário
   const funcionarios = [...new Set(dados.map(d => d.nome))]
   
@@ -531,39 +600,50 @@ export function gerarTabelaDados(
       dadosPorDia[d.dia] = d
     }
     
-    // Cria estrutura da planilha do funcionário
-    const linhas: (string | number)[][] = []
+    // Estrutura da planilha com estilos
+    const ws: XLSX.WorkSheet = {}
     
-    // Cabeçalho com informações do funcionário
-    linhas.push(["FOLHA DE PONTO - " + mesAno])
-    linhas.push([])
-    linhas.push(["NOME:", func.toUpperCase(), "", "FUNÇÃO:", ""])
-    linhas.push([])
+    // Linha 1: Título
+    ws["A1"] = { 
+      v: `FOLHA DE PONTO - ${mesAno}`, 
+      s: { 
+        font: { bold: true, sz: 16, color: { rgb: CORES.BRANCO }, name: "Arial" },
+        fill: { fgColor: { rgb: CORES.AZUL_ESCURO }, patternType: "solid" },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: BORDA_FINA
+      } 
+    }
     
-    // Cabeçalho da tabela (linha 5 - índice 4)
-    linhas.push([
-      "DIA",
-      "DIA SEMANA",
-      "ENTRADA 1",
-      "SAÍDA ALMOÇO",
-      "ENTRADA 2",
-      "SAÍDA",
-      "TOTAL HORAS",
-      "HORAS EXTRAS",
-      "FERIADO/OBS",
-      "ALERTA"
-    ])
+    // Linha 3: Nome e Função
+    ws["A3"] = { v: "NOME:", s: { font: { bold: true }, border: BORDA_FINA, fill: { fgColor: { rgb: CORES.CINZA_CLARO }, patternType: "solid" } } }
+    ws["B3"] = { v: func.toUpperCase(), s: { font: { bold: true, sz: 12 }, border: BORDA_FINA, fill: { fgColor: { rgb: CORES.AMARELO_CLARO }, patternType: "solid" } } }
+    ws["D3"] = { v: "FUNÇÃO:", s: { font: { bold: true }, border: BORDA_FINA, fill: { fgColor: { rgb: CORES.CINZA_CLARO }, patternType: "solid" } } }
+    ws["E3"] = { v: "", s: { border: BORDA_FINA, fill: { fgColor: { rgb: CORES.AMARELO_CLARO }, patternType: "solid" } } }
+    ws["G3"] = { v: "JORNADA:", s: { font: { bold: true }, border: BORDA_FINA, fill: { fgColor: { rgb: CORES.CINZA_CLARO }, patternType: "solid" } } }
+    ws["H3"] = { v: "08:00", s: { border: BORDA_FINA, fill: { fgColor: { rgb: CORES.AMARELO_CLARO }, patternType: "solid" } } }
     
-    // Jornada padrão em minutos (8 horas)
-    const JORNADA_PADRAO = 8 * 60
-    const ALMOCO_MINIMO = 60 // 1 hora
+    // Linha 5: Cabeçalho da tabela
+    const cabecalhos = ["DIA", "SEMANA", "ENTRADA 1", "SAÍDA ALM.", "ENTRADA 2", "SAÍDA", "TOTAL", "EXTRAS", "STATUS", "JUSTIFICATIVA", "ALERTA"]
+    const colLetras = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]
     
-    let totalHorasExtras = 0
-    const alertas: string[] = []
-    const observacoesSistema: string[] = []
+    for (let i = 0; i < cabecalhos.length; i++) {
+      ws[`${colLetras[i]}5`] = {
+        v: cabecalhos[i],
+        s: {
+          font: { bold: true, color: { rgb: CORES.BRANCO }, sz: 10, name: "Arial" },
+          fill: { fgColor: { rgb: CORES.VERDE_ESCURO }, patternType: "solid" },
+          alignment: { horizontal: "center", vertical: "center", wrapText: true },
+          border: BORDA_FINA
+        }
+      }
+    }
+    
+    // Linha de início dos dados
+    const linhaInicioDados = 6
     
     // Preenche cada dia do mês
     for (let dia = 1; dia <= diasNoMes; dia++) {
+      const row = linhaInicioDados + dia - 1
       const dataAtual = new Date(ano, mes - 1, dia)
       const diaSemana = dataAtual.getDay()
       const diasSemanaTexto = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"]
@@ -573,143 +653,276 @@ export function gerarTabelaDados(
       const feriado = verificarFeriado(dia, mes, ano)
       const isDomingo = diaSemana === 0
       const isSabado = diaSemana === 6
+      const isFimDeSemanaOuFeriado = isDomingo || isSabado || feriado.isFeriado
       
-      let entrada1 = ""
-      let saida1 = ""
-      let entrada2 = ""
-      let saida2 = ""
-      let totalHoras = ""
-      let horasExtras = ""
-      let feriadoObs = ""
-      let alerta = ""
+      // Determina se é dia sem registro (possível falta)
+      const semRegistro = !registro && !isFimDeSemanaOuFeriado
       
-      if (registro) {
-        entrada1 = registro.entrada1
-        saida1 = registro.saida1
-        entrada2 = registro.entrada2
-        saida2 = registro.saida2
-        
-        // Calcula total de horas trabalhadas
-        const minutosTrabalhados = calcularHorasTrabalhadas(entrada1, saida1, entrada2, saida2)
-        
-        if (minutosTrabalhados > 0) {
-          totalHoras = minutosParaHorario(minutosTrabalhados)
-          
-          // Calcula horas extras
-          if (isDomingo || isSabado || feriado.isFeriado) {
-            // Fim de semana ou feriado: todas as horas são extras
-            if (minutosTrabalhados > 0) {
-              horasExtras = minutosParaHorario(minutosTrabalhados)
-              totalHorasExtras += minutosTrabalhados
-            }
-          } else {
-            // Dia normal: horas extras são as que excedem a jornada
-            const extras = minutosTrabalhados - JORNADA_PADRAO
-            if (extras > 0) {
-              horasExtras = minutosParaHorario(extras)
-              totalHorasExtras += extras
-            } else if (extras < 0) {
-              // Horas faltantes (negativo)
-              horasExtras = minutosParaHorario(extras)
-            }
+      // Define cor de fundo base
+      let corFundo = dia % 2 === 0 ? CORES.CINZA_CLARO : CORES.BRANCO
+      let corTexto = CORES.PRETO
+      let statusTexto = ""
+      let alertaTexto = ""
+      
+      if (isFimDeSemanaOuFeriado) {
+        corFundo = CORES.ROXO_CLARO
+        if (feriado.isFeriado) {
+          statusTexto = `FERIADO: ${feriado.nome}`
+        } else if (isDomingo) {
+          statusTexto = "DOMINGO"
+        } else {
+          statusTexto = "SÁBADO"
+        }
+      } else if (semRegistro) {
+        corFundo = CORES.VERMELHO_CLARO
+        corTexto = CORES.VERMELHO_ESCURO
+        statusTexto = "SEM REGISTRO"
+      }
+      
+      // Horários
+      const entrada1 = registro?.entrada1 || ""
+      const saida1 = registro?.saida1 || ""
+      const entrada2 = registro?.entrada2 || ""
+      const saida2 = registro?.saida2 || ""
+      
+      // Verifica registros incompletos
+      if (registro && registro.status.includes("Incompleto")) {
+        corFundo = CORES.AMARELO_CLARO
+        corTexto = CORES.AMARELO_ESCURO
+        alertaTexto = registro.status
+      }
+      
+      // Verifica almoço curto
+      if (saida1 && entrada2) {
+        const duracaoAlmoco = calcularDuracaoAlmoco(saida1, entrada2)
+        if (duracaoAlmoco > 0 && duracaoAlmoco < 60) {
+          if (alertaTexto) alertaTexto += " | "
+          alertaTexto += `ALMOÇO ${minutosParaHorario(duracaoAlmoco)}`
+          if (corFundo !== CORES.VERMELHO_CLARO) {
+            corFundo = CORES.AMARELO_CLARO
           }
         }
-        
-        // Verifica duração do almoço
-        const duracaoAlmoco = calcularDuracaoAlmoco(saida1, entrada2)
-        if (duracaoAlmoco > 0 && duracaoAlmoco < ALMOCO_MINIMO) {
-          alerta = `ALMOÇO < 1h (${minutosParaHorario(duracaoAlmoco)})`
-          alertas.push(`Dia ${dia}: Almoço de apenas ${minutosParaHorario(duracaoAlmoco)}`)
-        }
-        
-        // Verifica registro incompleto
-        if (registro.status.includes("Incompleto")) {
-          if (alerta) alerta += " | "
-          alerta += registro.status
-          observacoesSistema.push(`Dia ${dia}: ${registro.status}`)
-        }
       }
       
-      // Define observação de feriado/fim de semana
-      if (feriado.isFeriado) {
-        feriadoObs = `FERIADO: ${feriado.nome}`
-      } else if (isDomingo) {
-        feriadoObs = "DOMINGO"
-      } else if (isSabado) {
-        feriadoObs = "SÁBADO"
+      // Se tudo OK em dia normal com registro completo
+      if (registro && !registro.status.includes("Incompleto") && !isFimDeSemanaOuFeriado && !alertaTexto) {
+        corFundo = CORES.VERDE_CLARO
+        corTexto = CORES.VERDE_TEXTO
+        statusTexto = "OK"
       }
       
-      linhas.push([
-        dia,
-        diaSemanaStr,
-        entrada1,
-        saida1,
-        entrada2,
-        saida2,
-        totalHoras,
-        horasExtras,
-        feriadoObs,
-        alerta
-      ])
+      // Estilo base para a linha
+      const estiloBase: CellStyle = {
+        font: { color: { rgb: corTexto }, sz: 10, name: "Arial" },
+        fill: { fgColor: { rgb: corFundo }, patternType: "solid" },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: BORDA_FINA
+      }
+      
+      // Coluna A: DIA
+      ws[`A${row}`] = { v: dia, s: { ...estiloBase, font: { ...estiloBase.font, bold: true } } }
+      
+      // Coluna B: DIA SEMANA
+      ws[`B${row}`] = { v: diaSemanaStr, s: estiloBase }
+      
+      // Coluna C: ENTRADA 1
+      ws[`C${row}`] = { v: entrada1, s: estiloBase }
+      
+      // Coluna D: SAÍDA ALMOÇO
+      ws[`D${row}`] = { v: saida1, s: estiloBase }
+      
+      // Coluna E: ENTRADA 2
+      ws[`E${row}`] = { v: entrada2, s: estiloBase }
+      
+      // Coluna F: SAÍDA
+      ws[`F${row}`] = { v: saida2, s: estiloBase }
+      
+      // Coluna G: TOTAL HORAS (fórmula Excel)
+      // Fórmula: SE todos os horários preenchidos, calcular (F-C)-(E-D) para dias com almoço
+      // Ou simplesmente (F-C) se não tiver almoço registrado
+      const formulaTotal = `=SE(E(C${row}<>"";F${row}<>"");SE(E(D${row}<>"";E${row}<>"");(F${row}-C${row})-(E${row}-D${row});F${row}-C${row});"")`
+      ws[`G${row}`] = { 
+        f: formulaTotal, 
+        s: { 
+          ...estiloBase, 
+          numFmt: "[h]:mm",
+          font: { ...estiloBase.font, bold: true }
+        } 
+      }
+      
+      // Coluna H: HORAS EXTRAS (fórmula Excel)
+      // Se fim de semana/feriado: todas as horas são extras
+      // Se dia normal: horas - jornada (8h = $H$3)
+      let formulaExtras: string
+      if (isFimDeSemanaOuFeriado) {
+        formulaExtras = `=SE(G${row}<>"";G${row};"")`
+      } else {
+        formulaExtras = `=SE(G${row}<>"";G${row}-$H$3;"")`
+      }
+      ws[`H${row}`] = { 
+        f: formulaExtras, 
+        s: { 
+          ...estiloBase, 
+          numFmt: "[h]:mm;-[h]:mm",
+          font: { ...estiloBase.font, bold: true }
+        } 
+      }
+      
+      // Coluna I: STATUS
+      ws[`I${row}`] = { v: statusTexto, s: estiloBase }
+      
+      // Coluna J: JUSTIFICATIVA (dropdown será simulado com validação - o usuário pode digitar)
+      ws[`J${row}`] = { 
+        v: "", 
+        s: { 
+          ...estiloBase, 
+          fill: { fgColor: { rgb: CORES.BRANCO }, patternType: "solid" },
+          font: { color: { rgb: CORES.PRETO }, sz: 9, name: "Arial" }
+        } 
+      }
+      
+      // Coluna K: ALERTA
+      const estiloAlerta: CellStyle = {
+        ...estiloBase,
+        font: { color: { rgb: alertaTexto ? CORES.VERMELHO_ESCURO : CORES.PRETO }, sz: 9, bold: !!alertaTexto, name: "Arial" }
+      }
+      ws[`K${row}`] = { v: alertaTexto, s: estiloAlerta }
     }
     
-    // Linha de totais (após os dias)
-    linhas.push([])
-    linhas.push(["", "", "", "", "", "TOTAL HORAS EXTRAS:", minutosParaHorario(totalHorasExtras), "", "", ""])
+    // Linha de totais
+    const linhaTotais = linhaInicioDados + diasNoMes + 1
     
-    // Seção de observações
-    linhas.push([])
-    linhas.push(["OBSERVAÇÕES DO SISTEMA:"])
-    
-    if (alertas.length > 0) {
-      linhas.push(["ALERTAS DE ALMOÇO:"])
-      for (const alerta of alertas) {
-        linhas.push([alerta])
-      }
+    // Estilo para totais
+    const estiloTotais: CellStyle = {
+      font: { bold: true, color: { rgb: CORES.BRANCO }, sz: 11, name: "Arial" },
+      fill: { fgColor: { rgb: CORES.AZUL_ESCURO }, patternType: "solid" },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: BORDA_FINA
     }
     
-    if (observacoesSistema.length > 0) {
-      linhas.push([])
-      linhas.push(["REGISTROS INCOMPLETOS:"])
-      for (const obs of observacoesSistema) {
-        linhas.push([obs])
-      }
+    ws[`A${linhaTotais}`] = { v: "", s: estiloTotais }
+    ws[`B${linhaTotais}`] = { v: "", s: estiloTotais }
+    ws[`C${linhaTotais}`] = { v: "", s: estiloTotais }
+    ws[`D${linhaTotais}`] = { v: "", s: estiloTotais }
+    ws[`E${linhaTotais}`] = { v: "", s: estiloTotais }
+    ws[`F${linhaTotais}`] = { v: "TOTAIS:", s: estiloTotais }
+    
+    // Total de horas trabalhadas (fórmula SOMA)
+    ws[`G${linhaTotais}`] = { 
+      f: `=SOMA(G${linhaInicioDados}:G${linhaInicioDados + diasNoMes - 1})`, 
+      s: { ...estiloTotais, numFmt: "[h]:mm" } 
+    }
+    
+    // Total de horas extras (fórmula SOMA com filtro de positivos)
+    ws[`H${linhaTotais}`] = { 
+      f: `=SOMA(H${linhaInicioDados}:H${linhaInicioDados + diasNoMes - 1})`, 
+      s: { ...estiloTotais, numFmt: "[h]:mm;-[h]:mm" } 
+    }
+    
+    ws[`I${linhaTotais}`] = { v: "", s: estiloTotais }
+    ws[`J${linhaTotais}`] = { v: "", s: estiloTotais }
+    ws[`K${linhaTotais}`] = { v: "", s: estiloTotais }
+    
+    // Seção de Observações
+    const linhaObs = linhaTotais + 2
+    
+    ws[`A${linhaObs}`] = { 
+      v: "OBSERVAÇÕES E JUSTIFICATIVAS:", 
+      s: { 
+        font: { bold: true, sz: 11, name: "Arial" },
+        fill: { fgColor: { rgb: CORES.CINZA_CLARO }, patternType: "solid" },
+        border: BORDA_FINA
+      } 
+    }
+    
+    // Lista de justificativas possíveis
+    ws[`A${linhaObs + 1}`] = { 
+      v: `Opções: ${JUSTIFICATIVAS.join(", ")}`, 
+      s: { 
+        font: { italic: true, sz: 9, color: { rgb: "666666" }, name: "Arial" },
+        alignment: { wrapText: true }
+      } 
     }
     
     // Espaço para observações manuais
-    linhas.push([])
-    linhas.push(["OUTRAS OBSERVAÇÕES:"])
-    linhas.push([""])
-    linhas.push([""])
-    linhas.push([""])
+    for (let i = 0; i < 5; i++) {
+      ws[`A${linhaObs + 3 + i}`] = { 
+        v: "", 
+        s: { 
+          border: BORDA_FINA,
+          fill: { fgColor: { rgb: CORES.BRANCO }, patternType: "solid" }
+        } 
+      }
+    }
     
     // Assinatura
-    linhas.push([])
-    linhas.push(["", "", "", "___________________________"])
-    linhas.push(["", "", "", "Assinatura do Funcionário"])
+    const linhaAss = linhaObs + 10
+    ws[`D${linhaAss}`] = { v: "________________________________", s: { alignment: { horizontal: "center" } } }
+    ws[`D${linhaAss + 1}`] = { v: "Assinatura do Funcionário", s: { font: { sz: 9 }, alignment: { horizontal: "center" } } }
+    ws[`H${linhaAss}`] = { v: "________________________________", s: { alignment: { horizontal: "center" } } }
+    ws[`H${linhaAss + 1}`] = { v: "Assinatura do Responsável", s: { font: { sz: 9 }, alignment: { horizontal: "center" } } }
     
-    // Cria worksheet
-    const ws = XLSX.utils.aoa_to_sheet(linhas)
+    // Legenda
+    const linhaLegenda = linhaAss + 4
+    ws[`A${linhaLegenda}`] = { 
+      v: "LEGENDA:", 
+      s: { font: { bold: true, sz: 10 } } 
+    }
+    
+    // Cores da legenda
+    const legendas = [
+      { cor: CORES.VERDE_CLARO, texto: "Dia OK" },
+      { cor: CORES.VERMELHO_CLARO, texto: "Sem registro / Falta" },
+      { cor: CORES.AMARELO_CLARO, texto: "Registro incompleto / Alerta" },
+      { cor: CORES.ROXO_CLARO, texto: "Fim de semana / Feriado" },
+    ]
+    
+    for (let i = 0; i < legendas.length; i++) {
+      const col = colLetras[i * 2]
+      const colTexto = colLetras[i * 2 + 1]
+      ws[`${col}${linhaLegenda + 1}`] = { 
+        v: "■", 
+        s: { 
+          font: { color: { rgb: legendas[i].cor }, sz: 14 },
+          alignment: { horizontal: "center" }
+        } 
+      }
+      ws[`${colTexto}${linhaLegenda + 1}`] = { 
+        v: legendas[i].texto, 
+        s: { font: { sz: 9 } } 
+      }
+    }
+    
+    // Define range da planilha
+    ws["!ref"] = `A1:K${linhaLegenda + 2}`
     
     // Define largura das colunas
     ws["!cols"] = [
-      { wch: 6 },   // DIA
-      { wch: 10 },  // DIA SEMANA
-      { wch: 12 },  // ENTRADA 1
-      { wch: 14 },  // SAÍDA ALMOÇO
-      { wch: 12 },  // ENTRADA 2
-      { wch: 10 },  // SAÍDA
-      { wch: 12 },  // TOTAL HORAS
-      { wch: 12 },  // HORAS EXTRAS
-      { wch: 25 },  // FERIADO/OBS
-      { wch: 30 },  // ALERTA
+      { wch: 5 },   // A: DIA
+      { wch: 8 },   // B: SEMANA
+      { wch: 11 },  // C: ENTRADA 1
+      { wch: 11 },  // D: SAÍDA ALM
+      { wch: 11 },  // E: ENTRADA 2
+      { wch: 11 },  // F: SAÍDA
+      { wch: 10 },  // G: TOTAL
+      { wch: 10 },  // H: EXTRAS
+      { wch: 22 },  // I: STATUS
+      { wch: 20 },  // J: JUSTIFICATIVA
+      { wch: 25 },  // K: ALERTA
+    ]
+    
+    // Altura das linhas
+    ws["!rows"] = [
+      { hpt: 25 }, // Título
     ]
     
     // Merge para o título
     ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }, // Título
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }, // Título
       { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } }, // Nome
-      { s: { r: 2, c: 4 }, e: { r: 2, c: 6 } }, // Função
+      { s: { r: 2, c: 4 }, e: { r: 2, c: 5 } }, // Função
+      { s: { r: linhaObs - 1, c: 0 }, e: { r: linhaObs - 1, c: 10 } }, // Observações título
+      { s: { r: linhaObs, c: 0 }, e: { r: linhaObs, c: 10 } }, // Opções justificativas
     ]
     
     // Limita nome da aba a 31 caracteres
@@ -717,137 +930,241 @@ export function gerarTabelaDados(
     XLSX.utils.book_append_sheet(wb, ws, nomeAba)
   }
   
-  // Cria aba de resumo geral
-  const resumoLinhas: (string | number)[][] = []
-  resumoLinhas.push(["RESUMO DE HORAS EXTRAS - " + mesAno])
-  resumoLinhas.push([])
-  resumoLinhas.push(["FUNCIONÁRIO", "TOTAL HORAS EXTRAS", "OBSERVAÇÕES"])
+  // Cria aba de RESUMO com fórmulas
+  criarAbaResumo(wb, funcionarios, mesAno, diasNoMes)
   
-  for (const func of funcionarios) {
-    const dadosFunc = dados.filter(d => d.nome === func)
-    let totalExtras = 0
-    
-    for (const d of dadosFunc) {
-      const dataAtual = new Date(d.ano, d.mes - 1, d.dia)
-      const diaSemana = dataAtual.getDay()
-      const feriado = verificarFeriado(d.dia, d.mes, d.ano)
-      
-      const minutosTrabalhados = calcularHorasTrabalhadas(d.entrada1, d.saida1, d.entrada2, d.saida2)
-      
-      if (diaSemana === 0 || diaSemana === 6 || feriado.isFeriado) {
-        totalExtras += minutosTrabalhados
-      } else {
-        const extras = minutosTrabalhados - (8 * 60)
-        if (extras > 0) totalExtras += extras
-      }
-    }
-    
-    resumoLinhas.push([func.toUpperCase(), minutosParaHorario(totalExtras), ""])
+  // Cria aba de dados para PROCV
+  criarAbaDadosPROCV(wb, dados)
+  
+  // Cria aba de instruções
+  criarAbaInstrucoes(wb)
+
+  return wb
+}
+
+// Cria aba de resumo com referências às abas dos funcionários
+function criarAbaResumo(wb: XLSX.WorkBook, funcionarios: string[], mesAno: string, diasNoMes: number): void {
+  const ws: XLSX.WorkSheet = {}
+  
+  // Título
+  ws["A1"] = { 
+    v: `RESUMO DE HORAS EXTRAS - ${mesAno}`, 
+    s: { 
+      font: { bold: true, sz: 16, color: { rgb: CORES.BRANCO }, name: "Arial" },
+      fill: { fgColor: { rgb: CORES.AZUL_ESCURO }, patternType: "solid" },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: BORDA_FINA
+    } 
   }
   
-  const wsResumo = XLSX.utils.aoa_to_sheet(resumoLinhas)
-  wsResumo["!cols"] = [
+  // Cabeçalhos
+  const cabecalhos = ["FUNCIONÁRIO", "TOTAL HORAS", "HORAS EXTRAS", "DIAS FALTANTES", "OBSERVAÇÕES"]
+  const colLetras = ["A", "B", "C", "D", "E"]
+  
+  for (let i = 0; i < cabecalhos.length; i++) {
+    ws[`${colLetras[i]}3`] = {
+      v: cabecalhos[i],
+      s: {
+        font: { bold: true, color: { rgb: CORES.BRANCO }, sz: 11, name: "Arial" },
+        fill: { fgColor: { rgb: CORES.VERDE_ESCURO }, patternType: "solid" },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: BORDA_FINA
+      }
+    }
+  }
+  
+  // Dados de cada funcionário com fórmulas referenciando as abas
+  for (let i = 0; i < funcionarios.length; i++) {
+    const row = 4 + i
+    const nomeAba = funcionarios[i].substring(0, 31).toUpperCase()
+    const linhaInicioDados = 6
+    const linhaTotais = linhaInicioDados + diasNoMes + 1
+    
+    const corFundo = i % 2 === 0 ? CORES.CINZA_CLARO : CORES.BRANCO
+    const estiloBase: CellStyle = {
+      font: { sz: 10, name: "Arial" },
+      fill: { fgColor: { rgb: corFundo }, patternType: "solid" },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: BORDA_FINA
+    }
+    
+    // Nome
+    ws[`A${row}`] = { v: nomeAba, s: { ...estiloBase, font: { ...estiloBase.font, bold: true } } }
+    
+    // Total de horas (referência à aba do funcionário)
+    ws[`B${row}`] = { 
+      f: `='${nomeAba}'!G${linhaTotais}`, 
+      s: { ...estiloBase, numFmt: "[h]:mm" } 
+    }
+    
+    // Horas extras
+    ws[`C${row}`] = { 
+      f: `='${nomeAba}'!H${linhaTotais}`, 
+      s: { ...estiloBase, numFmt: "[h]:mm;-[h]:mm" } 
+    }
+    
+    // Dias faltantes (conta células "SEM REGISTRO")
+    ws[`D${row}`] = { 
+      f: `=CONT.SE('${nomeAba}'!I${linhaInicioDados}:I${linhaInicioDados + diasNoMes - 1};"SEM REGISTRO")`, 
+      s: estiloBase 
+    }
+    
+    // Observações
+    ws[`E${row}`] = { v: "", s: { ...estiloBase, fill: { fgColor: { rgb: CORES.BRANCO }, patternType: "solid" } } }
+  }
+  
+  // Linha de totais
+  const rowTotal = 4 + funcionarios.length + 1
+  const estiloTotais: CellStyle = {
+    font: { bold: true, color: { rgb: CORES.BRANCO }, sz: 11, name: "Arial" },
+    fill: { fgColor: { rgb: CORES.AZUL_ESCURO }, patternType: "solid" },
+    alignment: { horizontal: "center", vertical: "center" },
+    border: BORDA_FINA
+  }
+  
+  ws[`A${rowTotal}`] = { v: "TOTAL GERAL:", s: estiloTotais }
+  ws[`B${rowTotal}`] = { f: `=SOMA(B4:B${rowTotal - 2})`, s: { ...estiloTotais, numFmt: "[h]:mm" } }
+  ws[`C${rowTotal}`] = { f: `=SOMA(C4:C${rowTotal - 2})`, s: { ...estiloTotais, numFmt: "[h]:mm;-[h]:mm" } }
+  ws[`D${rowTotal}`] = { f: `=SOMA(D4:D${rowTotal - 2})`, s: estiloTotais }
+  ws[`E${rowTotal}`] = { v: "", s: estiloTotais }
+  
+  // Define range e colunas
+  ws["!ref"] = `A1:E${rowTotal + 1}`
+  ws["!cols"] = [
     { wch: 25 },  // FUNCIONÁRIO
-    { wch: 20 },  // TOTAL HORAS EXTRAS
-    { wch: 40 },  // OBSERVAÇÕES
+    { wch: 15 },  // TOTAL HORAS
+    { wch: 15 },  // HORAS EXTRAS
+    { wch: 15 },  // DIAS FALTANTES
+    { wch: 30 },  // OBSERVAÇÕES
   ]
   
-  XLSX.utils.book_append_sheet(wb, wsResumo, "RESUMO")
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }, // Título
+  ]
   
-  // Cria aba com dados brutos (para PROCV)
+  XLSX.utils.book_append_sheet(wb, ws, "RESUMO")
+}
+
+// Cria aba com dados para PROCV
+function criarAbaDadosPROCV(wb: XLSX.WorkBook, dados: DadosPonto[]): void {
   const dadosOrdenados = [...dados].sort((a, b) => {
     const nomeCompare = a.nome.localeCompare(b.nome)
     if (nomeCompare !== 0) return nomeCompare
     return a.dia - b.dia
   })
   
-  const cabecalhosDados = [
-    "FUNCIONARIO",
-    "DIA",
-    "CHAVE_PROCV",
-    "ENTRADA_1",
-    "SAIDA_1",
-    "ENTRADA_2",
-    "SAIDA_2",
-    "STATUS"
-  ]
+  const ws: XLSX.WorkSheet = {}
   
-  const linhasDados: (string | number)[][] = [cabecalhosDados]
+  // Cabeçalhos
+  const cabecalhos = ["FUNCIONÁRIO", "DIA", "CHAVE_PROCV", "ENTRADA_1", "SAÍDA_1", "ENTRADA_2", "SAÍDA_2", "STATUS"]
+  const colLetras = ["A", "B", "C", "D", "E", "F", "G", "H"]
   
-  for (const d of dadosOrdenados) {
-    const chaveProcv = `${d.nome.toUpperCase()}_${d.dia}`
-    linhasDados.push([
-      d.nome.toUpperCase(),
-      d.dia,
-      chaveProcv,
-      d.entrada1,
-      d.saida1,
-      d.entrada2,
-      d.saida2,
-      d.status
-    ])
+  for (let i = 0; i < cabecalhos.length; i++) {
+    ws[`${colLetras[i]}1`] = {
+      v: cabecalhos[i],
+      s: {
+        font: { bold: true, color: { rgb: CORES.BRANCO }, sz: 10, name: "Arial" },
+        fill: { fgColor: { rgb: CORES.VERDE_ESCURO }, patternType: "solid" },
+        alignment: { horizontal: "center" },
+        border: BORDA_FINA
+      }
+    }
   }
   
-  const wsDados = XLSX.utils.aoa_to_sheet(linhasDados)
-  wsDados["!cols"] = [
-    { wch: 20 }, // FUNCIONARIO
-    { wch: 6 },  // DIA
-    { wch: 25 }, // CHAVE_PROCV
-    { wch: 10 }, // ENTRADA_1
-    { wch: 10 }, // SAIDA_1
-    { wch: 10 }, // ENTRADA_2
-    { wch: 10 }, // SAIDA_2
-    { wch: 20 }, // STATUS
+  // Dados
+  for (let i = 0; i < dadosOrdenados.length; i++) {
+    const d = dadosOrdenados[i]
+    const row = i + 2
+    const corFundo = i % 2 === 0 ? CORES.CINZA_CLARO : CORES.BRANCO
+    const estiloBase: CellStyle = {
+      font: { sz: 10, name: "Arial" },
+      fill: { fgColor: { rgb: corFundo }, patternType: "solid" },
+      alignment: { horizontal: "center" },
+      border: BORDA_FINA
+    }
+    
+    ws[`A${row}`] = { v: d.nome.toUpperCase(), s: estiloBase }
+    ws[`B${row}`] = { v: d.dia, s: estiloBase }
+    ws[`C${row}`] = { v: `${d.nome.toUpperCase()}_${d.dia}`, s: estiloBase }
+    ws[`D${row}`] = { v: d.entrada1, s: estiloBase }
+    ws[`E${row}`] = { v: d.saida1, s: estiloBase }
+    ws[`F${row}`] = { v: d.entrada2, s: estiloBase }
+    ws[`G${row}`] = { v: d.saida2, s: estiloBase }
+    ws[`H${row}`] = { v: d.status, s: estiloBase }
+  }
+  
+  ws["!ref"] = `A1:H${dadosOrdenados.length + 1}`
+  ws["!cols"] = [
+    { wch: 20 }, { wch: 6 }, { wch: 25 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 20 }
   ]
   
-  XLSX.utils.book_append_sheet(wb, wsDados, "Dados_PROCV")
-  
-  // Aba de instruções
-  const instrucoes = [
-    ["INSTRUÇÕES DE USO"],
-    [""],
-    ["Esta planilha contém:"],
-    [""],
-    ["1. Uma aba para cada funcionário com:"],
-    ["   - Espaço para nome e função"],
-    ["   - Todos os dias do mês com horários"],
-    ["   - Cálculo automático de horas trabalhadas"],
-    ["   - Cálculo de horas extras (positivas e negativas)"],
-    ["   - Identificação de feriados, sábados e domingos"],
-    ["   - Alertas quando almoço for menor que 1 hora"],
-    ["   - Total de horas extras do mês"],
-    ["   - Espaço para observações"],
-    [""],
-    ["2. Aba RESUMO com total de horas extras de cada funcionário"],
-    [""],
-    ["3. Aba Dados_PROCV para usar com fórmulas PROCV"],
-    [""],
-    ["LEGENDA:"],
-    ["- FERIADO: Dia é feriado nacional"],
-    ["- SÁBADO/DOMINGO: Fim de semana"],
-    ["- ALMOÇO < 1h: Intervalo de almoço menor que 1 hora"],
-    ["- Incompleto: Faltam batidas no registro"],
-    [""],
-    ["OBSERVAÇÕES:"],
-    ["- Horas extras em feriados/fins de semana = todas as horas trabalhadas"],
-    ["- Horas extras em dias normais = horas além de 8h"],
-    ["- Valores negativos indicam horas faltantes"],
-    [""],
-    ["FERIADOS CONSIDERADOS:"],
-    ["- 01/01: Confraternização Universal"],
-    ["- 21/04: Tiradentes"],
-    ["- 01/05: Dia do Trabalho"],
-    ["- 07/09: Independência do Brasil"],
-    ["- 12/10: Nossa Senhora Aparecida"],
-    ["- 02/11: Finados"],
-    ["- 15/11: Proclamação da República"],
-    ["- 25/12: Natal"],
-    ["- Carnaval, Sexta-feira Santa, Corpus Christi (2024-2026)"],
-  ]
-  
-  const wsInstrucoes = XLSX.utils.aoa_to_sheet(instrucoes)
-  wsInstrucoes["!cols"] = [{ wch: 70 }]
-  XLSX.utils.book_append_sheet(wb, wsInstrucoes, "Instrucoes")
+  XLSX.utils.book_append_sheet(wb, ws, "Dados_PROCV")
+}
 
-  return wb
+// Cria aba de instruções
+function criarAbaInstrucoes(wb: XLSX.WorkBook): void {
+  const ws: XLSX.WorkSheet = {}
+  
+  const instrucoes = [
+    { texto: "INSTRUÇÕES DE USO", estilo: "titulo" },
+    { texto: "", estilo: "normal" },
+    { texto: "ESTRUTURA DA PLANILHA:", estilo: "subtitulo" },
+    { texto: "• Uma aba para cada funcionário com horários e cálculos", estilo: "normal" },
+    { texto: "• Aba RESUMO com totais de todos os funcionários", estilo: "normal" },
+    { texto: "• Aba Dados_PROCV para uso com fórmulas PROCV", estilo: "normal" },
+    { texto: "", estilo: "normal" },
+    { texto: "CORES E SIGNIFICADOS:", estilo: "subtitulo" },
+    { texto: "• VERDE: Dia com registro completo e OK", estilo: "normal" },
+    { texto: "• VERMELHO: Dia sem registro (possível falta)", estilo: "normal" },
+    { texto: "• AMARELO: Registro incompleto ou alerta de almoço", estilo: "normal" },
+    { texto: "• ROXO: Fim de semana ou feriado", estilo: "normal" },
+    { texto: "", estilo: "normal" },
+    { texto: "CÁLCULOS AUTOMÁTICOS:", estilo: "subtitulo" },
+    { texto: "• Total de horas = (Saída - Entrada 1) - (Entrada 2 - Saída Almoço)", estilo: "normal" },
+    { texto: "• Horas extras em dias normais = Total - Jornada (8h)", estilo: "normal" },
+    { texto: "• Horas extras em fins de semana/feriados = Total (todas as horas)", estilo: "normal" },
+    { texto: "", estilo: "normal" },
+    { texto: "JUSTIFICATIVAS DISPONÍVEIS:", estilo: "subtitulo" },
+    ...JUSTIFICATIVAS.map(j => ({ texto: `• ${j}`, estilo: "normal" })),
+    { texto: "", estilo: "normal" },
+    { texto: "FERIADOS CONSIDERADOS:", estilo: "subtitulo" },
+    { texto: "• 01/01: Confraternização Universal", estilo: "normal" },
+    { texto: "• 21/04: Tiradentes", estilo: "normal" },
+    { texto: "• 01/05: Dia do Trabalho", estilo: "normal" },
+    { texto: "• 07/09: Independência do Brasil", estilo: "normal" },
+    { texto: "• 12/10: Nossa Senhora Aparecida", estilo: "normal" },
+    { texto: "• 02/11: Finados", estilo: "normal" },
+    { texto: "• 15/11: Proclamação da República", estilo: "normal" },
+    { texto: "• 25/12: Natal", estilo: "normal" },
+    { texto: "• Carnaval, Sexta-feira Santa, Corpus Christi (móveis)", estilo: "normal" },
+    { texto: "", estilo: "normal" },
+    { texto: "DICAS:", estilo: "subtitulo" },
+    { texto: "• A jornada padrão pode ser alterada na célula H3 de cada aba", estilo: "normal" },
+    { texto: "• Use a coluna JUSTIFICATIVA para explicar faltas", estilo: "normal" },
+    { texto: "• As fórmulas são preservadas ao editar os horários", estilo: "normal" },
+  ]
+  
+  for (let i = 0; i < instrucoes.length; i++) {
+    const item = instrucoes[i]
+    let estilo: CellStyle = { font: { sz: 10, name: "Arial" } }
+    
+    if (item.estilo === "titulo") {
+      estilo = { 
+        font: { bold: true, sz: 14, color: { rgb: CORES.BRANCO }, name: "Arial" },
+        fill: { fgColor: { rgb: CORES.AZUL_ESCURO }, patternType: "solid" }
+      }
+    } else if (item.estilo === "subtitulo") {
+      estilo = { 
+        font: { bold: true, sz: 11, name: "Arial" },
+        fill: { fgColor: { rgb: CORES.CINZA_CLARO }, patternType: "solid" }
+      }
+    }
+    
+    ws[`A${i + 1}`] = { v: item.texto, s: estilo }
+  }
+  
+  ws["!ref"] = `A1:A${instrucoes.length}`
+  ws["!cols"] = [{ wch: 70 }]
+  
+  XLSX.utils.book_append_sheet(wb, ws, "Instrucoes")
 }
