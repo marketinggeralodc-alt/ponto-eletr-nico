@@ -586,8 +586,6 @@ export async function gerarTabelaDadosExcel(
       let saida1 = ""
       let entrada2 = ""
       let saida2 = ""
-      let totalHoras = ""
-      let horasExtras = ""
       let status = ""
       let observacao = ""
       
@@ -601,20 +599,14 @@ export async function gerarTabelaDadosExcel(
         entrada2 = registro.entrada2
         saida2 = registro.saida2
         
+        // Calcula para estatísticas (ainda usamos para resumo)
         const minutosTrabalhados = calcularHorasTrabalhadas(entrada1, saida1, entrada2, saida2)
-        
         if (minutosTrabalhados > 0) {
-          totalHoras = minutosParaHorario(minutosTrabalhados)
           totalMinutosMes += minutosTrabalhados
-          
           if (isFimDeSemanaOuFeriado) {
-            horasExtras = minutosParaHorario(minutosTrabalhados)
             totalExtrasMes += minutosTrabalhados
           } else {
             const extras = minutosTrabalhados - JORNADA_MINUTOS
-            if (extras !== 0) {
-              horasExtras = minutosParaHorario(extras)
-            }
             if (extras > 0) totalExtrasMes += extras
           }
         }
@@ -664,39 +656,172 @@ export async function gerarTabelaDadosExcel(
         }
       }
       
-      // Preenche as células
-      const valores = [dia, diaSemanaStr, entrada1, saida1, entrada2, saida2, totalHoras, horasExtras, status, "", observacao]
-      valores.forEach((val, idx) => {
-        const cell = row.getCell(idx + 1)
-        cell.value = val
-        cell.font = { size: 10, color: { argb: "FF" + corTexto } }
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + corFundo } }
-        cell.alignment = { horizontal: "center", vertical: "middle" }
-        cell.border = getBorder()
-      })
+      // Estilo base para as células
+      const estiloBase = {
+        font: { size: 10, color: { argb: "FF" + corTexto } },
+        fill: { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FF" + corFundo } },
+        alignment: { horizontal: "center" as const, vertical: "middle" as const },
+        border: getBorder()
+      }
       
-      // Coluna de justificativa com validação (dropdown)
-      const justCell = row.getCell(10)
-      justCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + CORES.BRANCO } }
-      justCell.font = { size: 9, color: { argb: "FF" + CORES.PRETO } }
+      // Coluna A: DIA
+      const cellDia = row.getCell(1)
+      cellDia.value = dia
+      Object.assign(cellDia, estiloBase)
+      
+      // Coluna B: SEMANA
+      const cellSemana = row.getCell(2)
+      cellSemana.value = diaSemanaStr
+      Object.assign(cellSemana, estiloBase)
+      
+      // Coluna C: ENTRADA 1 (formato hora)
+      const cellEntrada1 = row.getCell(3)
+      if (entrada1) {
+        const [h, m] = entrada1.split(":").map(Number)
+        cellEntrada1.value = new Date(1899, 11, 30, h, m)
+        cellEntrada1.numFmt = "HH:MM"
+      } else {
+        cellEntrada1.value = ""
+      }
+      Object.assign(cellEntrada1, estiloBase)
+      
+      // Coluna D: SAÍDA ALM (formato hora)
+      const cellSaida1 = row.getCell(4)
+      if (saida1) {
+        const [h, m] = saida1.split(":").map(Number)
+        cellSaida1.value = new Date(1899, 11, 30, h, m)
+        cellSaida1.numFmt = "HH:MM"
+      } else {
+        cellSaida1.value = ""
+      }
+      Object.assign(cellSaida1, estiloBase)
+      
+      // Coluna E: ENTRADA 2 (formato hora)
+      const cellEntrada2 = row.getCell(5)
+      if (entrada2) {
+        const [h, m] = entrada2.split(":").map(Number)
+        cellEntrada2.value = new Date(1899, 11, 30, h, m)
+        cellEntrada2.numFmt = "HH:MM"
+      } else {
+        cellEntrada2.value = ""
+      }
+      Object.assign(cellEntrada2, estiloBase)
+      
+      // Coluna F: SAÍDA (formato hora)
+      const cellSaida2 = row.getCell(6)
+      if (saida2) {
+        const [h, m] = saida2.split(":").map(Number)
+        cellSaida2.value = new Date(1899, 11, 30, h, m)
+        cellSaida2.numFmt = "HH:MM"
+      } else {
+        cellSaida2.value = ""
+      }
+      Object.assign(cellSaida2, estiloBase)
+      
+      // Coluna G: TOTAL HORAS (FÓRMULA EXCEL)
+      // Fórmula: SE tem entrada e saída, calcula (F-C)-(E-D) ou apenas (F-C) se não tem almoço
+      const cellTotal = row.getCell(7)
+      // Usa sintaxe internacional do Excel (vírgulas como separador)
+      // IF(AND(C>0,F>0),IF(AND(D>0,E>0),(F-C)-(E-D),F-C),"")
+      cellTotal.value = { 
+        formula: `IF(AND(C${rowNum}<>"",F${rowNum}<>""),IF(AND(D${rowNum}<>"",E${rowNum}<>""),(F${rowNum}-C${rowNum})-(E${rowNum}-D${rowNum}),F${rowNum}-C${rowNum}),"")`,
+        date1904: false
+      }
+      cellTotal.numFmt = "[H]:MM"
+      Object.assign(cellTotal, estiloBase)
+      cellTotal.font = { size: 10, bold: true, color: { argb: "FF" + corTexto } }
+      
+      // Coluna H: HORAS EXTRAS (FÓRMULA EXCEL)
+      // Para fds/feriado: igual ao total
+      // Para dia normal: total - jornada (H3)
+      const cellExtras = row.getCell(8)
+      if (isFimDeSemanaOuFeriado) {
+        // Fim de semana/feriado: todas as horas são extras
+        cellExtras.value = { 
+          formula: `IF(G${rowNum}<>"",G${rowNum},"")`,
+          date1904: false
+        }
+      } else {
+        // Dia normal: total - jornada (jornada está em H3 como texto "08:00")
+        // Converte H3 para valor de tempo usando TIMEVALUE
+        cellExtras.value = { 
+          formula: `IF(G${rowNum}<>"",G${rowNum}-TIMEVALUE($H$3),"")`,
+          date1904: false
+        }
+      }
+      cellExtras.numFmt = "[H]:MM;-[H]:MM"
+      Object.assign(cellExtras, estiloBase)
+      cellExtras.font = { size: 10, bold: true, color: { argb: "FF" + corTexto } }
+      
+      // Coluna I: STATUS
+      const cellStatus = row.getCell(9)
+      cellStatus.value = status
+      Object.assign(cellStatus, estiloBase)
+      
+      // Coluna J: JUSTIFICATIVA (editável)
+      const cellJust = row.getCell(10)
+      cellJust.value = ""
+      cellJust.font = { size: 9, color: { argb: "FF" + CORES.PRETO } }
+      cellJust.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + CORES.BRANCO } }
+      cellJust.alignment = { horizontal: "center", vertical: "middle" }
+      cellJust.border = getBorder()
+      
+      // Coluna K: OBSERVAÇÃO
+      const cellObs = row.getCell(11)
+      cellObs.value = observacao
+      Object.assign(cellObs, estiloBase)
     }
     
-    // Linha de totais
+    // Linha de totais com FÓRMULAS
     const linhaTotais = 6 + diasNoMes
     ws.getRow(linhaTotais).height = 5 // Linha vazia
     
     const linhaTotaisReal = linhaTotais + 1
     const totaisRow = ws.getRow(linhaTotaisReal)
+    const linhaInicioDados = 6
+    const linhaFimDados = 5 + diasNoMes
     
-    const valoresTotais = ["", "", "", "", "", "TOTAIS:", minutosParaHorario(totalMinutosMes), minutosParaHorario(totalExtrasMes), `${diasFalta} faltas`, "", ""]
-    valoresTotais.forEach((val, idx) => {
-      const cell = totaisRow.getCell(idx + 1)
-      cell.value = val
-      cell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } }
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + CORES.AZUL_ESCURO } }
-      cell.alignment = { horizontal: "center", vertical: "middle" }
-      cell.border = getBorder()
-    })
+    const estiloTotais = {
+      font: { bold: true, size: 10, color: { argb: "FFFFFFFF" } },
+      fill: { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FF" + CORES.AZUL_ESCURO } },
+      alignment: { horizontal: "center" as const, vertical: "middle" as const },
+      border: getBorder()
+    }
+    
+    // Células vazias A-E
+    for (let i = 1; i <= 5; i++) {
+      const cell = totaisRow.getCell(i)
+      cell.value = ""
+      Object.assign(cell, estiloTotais)
+    }
+    
+    // F: Label TOTAIS
+    const cellLabelTotais = totaisRow.getCell(6)
+    cellLabelTotais.value = "TOTAIS:"
+    Object.assign(cellLabelTotais, estiloTotais)
+    
+    // G: SOMA do total de horas (FÓRMULA)
+    const cellSomaTotal = totaisRow.getCell(7)
+    cellSomaTotal.value = { formula: `SUM(G${linhaInicioDados}:G${linhaFimDados})` }
+    cellSomaTotal.numFmt = "[H]:MM"
+    Object.assign(cellSomaTotal, estiloTotais)
+    
+    // H: SOMA das horas extras (FÓRMULA)
+    const cellSomaExtras = totaisRow.getCell(8)
+    cellSomaExtras.value = { formula: `SUM(H${linhaInicioDados}:H${linhaFimDados})` }
+    cellSomaExtras.numFmt = "[H]:MM;-[H]:MM"
+    Object.assign(cellSomaExtras, estiloTotais)
+    
+    // I: Contagem de faltas (FÓRMULA COUNTIF)
+    const cellFaltas = totaisRow.getCell(9)
+    cellFaltas.value = { formula: `COUNTIF(I${linhaInicioDados}:I${linhaFimDados},"SEM REGISTRO")&" faltas"` }
+    Object.assign(cellFaltas, estiloTotais)
+    
+    // J e K: vazias
+    totaisRow.getCell(10).value = ""
+    Object.assign(totaisRow.getCell(10), estiloTotais)
+    totaisRow.getCell(11).value = ""
+    Object.assign(totaisRow.getCell(11), estiloTotais)
     
     // Seção de observações
     const linhaObs = linhaTotaisReal + 2
@@ -930,16 +1055,27 @@ function criarAbaInstrucoesExcel(workbook: ExcelJS.Workbook): void {
     { texto: "- Aba RESUMO com totais de horas de todos os funcionários", estilo: "normal" },
     { texto: "- Aba Dados_PROCV para integração com outras planilhas", estilo: "normal" },
     { texto: "", estilo: "normal" },
+    { texto: "FÓRMULAS AUTOMÁTICAS:", estilo: "subtitulo" },
+    { texto: "- As colunas TOTAL e EXTRAS contêm fórmulas que calculam automaticamente", estilo: "normal" },
+    { texto: "- Ao editar os horários manualmente, os cálculos serão atualizados", estilo: "normal" },
+    { texto: "- A jornada padrão está na célula H3 (08:00) e pode ser alterada", estilo: "normal" },
+    { texto: "- Os totais no final usam SOMA e CONT.SE para calcular automaticamente", estilo: "normal" },
+    { texto: "", estilo: "normal" },
     { texto: "CORES E SIGNIFICADOS:", estilo: "subtitulo" },
     { texto: "- VERDE: Dia com registro completo e OK", estilo: "normal" },
     { texto: "- VERMELHO: Dia sem registro (possível falta)", estilo: "normal" },
     { texto: "- AMARELO: Registro incompleto ou alerta de almoço", estilo: "normal" },
     { texto: "- ROXO: Fim de semana ou feriado", estilo: "normal" },
     { texto: "", estilo: "normal" },
-    { texto: "CÁLCULOS:", estilo: "subtitulo" },
-    { texto: "- Total de horas = soma dos períodos trabalhados", estilo: "normal" },
-    { texto: "- Horas extras em dias normais = Total - 8 horas (jornada padrão)", estilo: "normal" },
+    { texto: "CÁLCULOS (fórmulas Excel):", estilo: "subtitulo" },
+    { texto: "- Total de horas = (Saída - Entrada1) - (Entrada2 - Saída Almoço)", estilo: "normal" },
+    { texto: "- Horas extras em dias normais = Total - Jornada (célula H3)", estilo: "normal" },
     { texto: "- Horas extras em fins de semana/feriados = Total (todas são extras)", estilo: "normal" },
+    { texto: "", estilo: "normal" },
+    { texto: "COMO PREENCHER MANUALMENTE:", estilo: "subtitulo" },
+    { texto: "- Digite os horários no formato HH:MM (ex: 08:00, 12:00, 13:00, 17:00)", estilo: "normal" },
+    { texto: "- O Excel converterá automaticamente para o formato de hora", estilo: "normal" },
+    { texto: "- Os cálculos de TOTAL e EXTRAS serão atualizados automaticamente", estilo: "normal" },
     { texto: "", estilo: "normal" },
     { texto: "JUSTIFICATIVAS DISPONÍVEIS:", estilo: "subtitulo" },
     ...JUSTIFICATIVAS.map(j => ({ texto: `- ${j}`, estilo: "normal" as const })),
@@ -955,12 +1091,11 @@ function criarAbaInstrucoesExcel(workbook: ExcelJS.Workbook): void {
     { texto: "- 25/12: Natal", estilo: "normal" },
     { texto: "- Carnaval, Sexta-feira Santa, Corpus Christi (datas móveis)", estilo: "normal" },
     { texto: "", estilo: "normal" },
-    { texto: "COMO USAR:", estilo: "subtitulo" },
-    { texto: "1. Verifique os registros de cada funcionário nas abas individuais", estilo: "normal" },
+    { texto: "DICAS IMPORTANTES:", estilo: "subtitulo" },
+    { texto: "1. Altere a jornada na célula H3 se necessário (ex: 06:00 para 6 horas)", estilo: "normal" },
     { texto: "2. Preencha a coluna JUSTIFICATIVA para dias sem registro", estilo: "normal" },
-    { texto: "3. Adicione observações quando necessário", estilo: "normal" },
-    { texto: "4. A jornada padrão é 8h (mostrada na célula H3 de cada aba)", estilo: "normal" },
-    { texto: "5. Use a aba RESUMO para ver o total de todos os funcionários", estilo: "normal" },
+    { texto: "3. Use a aba RESUMO para visão geral de todos os funcionários", estilo: "normal" },
+    { texto: "4. Os horários podem ser editados e os cálculos atualizam automaticamente", estilo: "normal" },
   ]
   
   linhas.forEach((item, idx) => {
