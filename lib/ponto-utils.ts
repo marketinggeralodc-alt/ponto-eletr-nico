@@ -544,7 +544,9 @@ export async function gerarTabelaDadosExcel(
     ws.getCell("G3").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + CORES.CINZA_CLARO } }
     ws.getCell("G3").border = getBorder()
     
-    ws.getCell("H3").value = "08:00"
+    // Jornada como valor de hora (8 horas = 8/24)
+    ws.getCell("H3").value = 8/24  // 8 horas em formato de fração de dia do Excel
+    ws.getCell("H3").numFmt = "HH:MM"
     ws.getCell("H3").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + CORES.AMARELO_CLARO } }
     ws.getCell("H3").border = getBorder()
     ws.getCell("H3").alignment = { horizontal: "center" }
@@ -721,8 +723,7 @@ export async function gerarTabelaDadosExcel(
       // Coluna G: TOTAL HORAS (FÓRMULA EXCEL)
       // Fórmula: SE tem entrada e saída, calcula (F-C)-(E-D) ou apenas (F-C) se não tem almoço
       const cellTotal = row.getCell(7)
-      // Usa sintaxe internacional do Excel (vírgulas como separador)
-      // IF(AND(C>0,F>0),IF(AND(D>0,E>0),(F-C)-(E-D),F-C),"")
+      // Usa sintaxe internacional do Excel
       cellTotal.value = { 
         formula: `IF(AND(C${rowNum}<>"",F${rowNum}<>""),IF(AND(D${rowNum}<>"",E${rowNum}<>""),(F${rowNum}-C${rowNum})-(E${rowNum}-D${rowNum}),F${rowNum}-C${rowNum}),"")`,
         date1904: false
@@ -733,7 +734,7 @@ export async function gerarTabelaDadosExcel(
       
       // Coluna H: HORAS EXTRAS (FÓRMULA EXCEL)
       // Para fds/feriado: igual ao total
-      // Para dia normal: total - jornada (H3)
+      // Para dia normal: total - jornada (H3 agora é valor numérico)
       const cellExtras = row.getCell(8)
       if (isFimDeSemanaOuFeriado) {
         // Fim de semana/feriado: todas as horas são extras
@@ -742,10 +743,9 @@ export async function gerarTabelaDadosExcel(
           date1904: false
         }
       } else {
-        // Dia normal: total - jornada (jornada está em H3 como texto "08:00")
-        // Converte H3 para valor de tempo usando TIMEVALUE
+        // Dia normal: total - jornada (H3 é valor numérico de hora)
         cellExtras.value = { 
-          formula: `IF(G${rowNum}<>"",G${rowNum}-TIMEVALUE($H$3),"")`,
+          formula: `IF(G${rowNum}<>"",G${rowNum}-$H$3,"")`,
           date1904: false
         }
       }
@@ -859,6 +859,59 @@ export async function gerarTabelaDadosExcel(
     ws.mergeCells(`A${linhaLeg}:K${linhaLeg}`)
     ws.getCell(`A${linhaLeg}`).value = "LEGENDA: Verde = OK | Vermelho = Sem Registro | Amarelo = Incompleto/Alerta | Roxo = Feriado/Fim de Semana"
     ws.getCell(`A${linhaLeg}`).font = { size: 9, italic: true }
+    
+    // Adiciona FORMATAÇÃO CONDICIONAL para linhas de dados
+    // Isso faz com que as cores mudem automaticamente quando o usuário editar
+    const linhaInicio = 6
+    const linhaFim = 5 + diasNoMes
+    
+    // Regra 1: Se tem todas as 4 entradas preenchidas = VERDE (OK)
+    ws.addConditionalFormatting({
+      ref: `A${linhaInicio}:K${linhaFim}`,
+      rules: [
+        {
+          type: "expression",
+          formulae: [`AND($C${linhaInicio}<>"",$D${linhaInicio}<>"",$E${linhaInicio}<>"",$F${linhaInicio}<>"")`],
+          style: {
+            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFC8E6C9" } },
+            font: { color: { argb: "FF1B5E20" } }
+          },
+          priority: 1
+        }
+      ]
+    })
+    
+    // Regra 2: Se tem entrada mas falta algum horário = AMARELO (Incompleto)
+    ws.addConditionalFormatting({
+      ref: `A${linhaInicio}:K${linhaFim}`,
+      rules: [
+        {
+          type: "expression",
+          formulae: [`AND(OR($C${linhaInicio}<>"",$F${linhaInicio}<>""),NOT(AND($C${linhaInicio}<>"",$D${linhaInicio}<>"",$E${linhaInicio}<>"",$F${linhaInicio}<>"")))`],
+          style: {
+            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFFF9C4" } },
+            font: { color: { argb: "FFF57F17" } }
+          },
+          priority: 2
+        }
+      ]
+    })
+    
+    // Regra 3: Se não tem nenhum horário E não é fim de semana = VERMELHO (Falta)
+    ws.addConditionalFormatting({
+      ref: `A${linhaInicio}:K${linhaFim}`,
+      rules: [
+        {
+          type: "expression",
+          formulae: [`AND($C${linhaInicio}="",$D${linhaInicio}="",$E${linhaInicio}="",$F${linhaInicio}="",$I${linhaInicio}<>"FERIADO",$I${linhaInicio}<>"DOMINGO",$I${linhaInicio}<>"SÁBADO",$I${linhaInicio}<>"DOM",$I${linhaInicio}<>"SAB")`],
+          style: {
+            fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFFCDD2" } },
+            font: { color: { argb: "FFB71C1C" } }
+          },
+          priority: 3
+        }
+      ]
+    })
     
     // Guarda dados para resumo
     resumoFuncionarios.push({
@@ -1058,24 +1111,32 @@ function criarAbaInstrucoesExcel(workbook: ExcelJS.Workbook): void {
     { texto: "FÓRMULAS AUTOMÁTICAS:", estilo: "subtitulo" },
     { texto: "- As colunas TOTAL e EXTRAS contêm fórmulas que calculam automaticamente", estilo: "normal" },
     { texto: "- Ao editar os horários manualmente, os cálculos serão atualizados", estilo: "normal" },
-    { texto: "- A jornada padrão está na célula H3 (08:00) e pode ser alterada", estilo: "normal" },
+    { texto: "- A jornada padrão está na célula H3 e pode ser alterada", estilo: "normal" },
     { texto: "- Os totais no final usam SOMA e CONT.SE para calcular automaticamente", estilo: "normal" },
     { texto: "", estilo: "normal" },
-    { texto: "CORES E SIGNIFICADOS:", estilo: "subtitulo" },
-    { texto: "- VERDE: Dia com registro completo e OK", estilo: "normal" },
-    { texto: "- VERMELHO: Dia sem registro (possível falta)", estilo: "normal" },
-    { texto: "- AMARELO: Registro incompleto ou alerta de almoço", estilo: "normal" },
-    { texto: "- ROXO: Fim de semana ou feriado", estilo: "normal" },
+    { texto: "FORMATAÇÃO CONDICIONAL (cores automáticas):", estilo: "subtitulo" },
+    { texto: "- VERDE: Quando preencher todos os 4 horários (entrada, saída almoço, entrada, saída)", estilo: "normal" },
+    { texto: "- AMARELO: Quando preencher parcialmente (falta algum horário)", estilo: "normal" },
+    { texto: "- VERMELHO: Quando dia útil estiver sem nenhum horário", estilo: "normal" },
+    { texto: "- ROXO: Feriados e fins de semana (não muda com edição)", estilo: "normal" },
     { texto: "", estilo: "normal" },
     { texto: "CÁLCULOS (fórmulas Excel):", estilo: "subtitulo" },
     { texto: "- Total de horas = (Saída - Entrada1) - (Entrada2 - Saída Almoço)", estilo: "normal" },
     { texto: "- Horas extras em dias normais = Total - Jornada (célula H3)", estilo: "normal" },
     { texto: "- Horas extras em fins de semana/feriados = Total (todas são extras)", estilo: "normal" },
+    { texto: "- Valores NEGATIVOS indicam horas faltantes (devendo)", estilo: "normal" },
     { texto: "", estilo: "normal" },
     { texto: "COMO PREENCHER MANUALMENTE:", estilo: "subtitulo" },
     { texto: "- Digite os horários no formato HH:MM (ex: 08:00, 12:00, 13:00, 17:00)", estilo: "normal" },
     { texto: "- O Excel converterá automaticamente para o formato de hora", estilo: "normal" },
     { texto: "- Os cálculos de TOTAL e EXTRAS serão atualizados automaticamente", estilo: "normal" },
+    { texto: "- As CORES mudarão automaticamente conforme você preencher", estilo: "normal" },
+    { texto: "", estilo: "normal" },
+    { texto: "COMO ALTERAR A JORNADA:", estilo: "subtitulo" },
+    { texto: "- A jornada está na célula H3 de cada aba de funcionário", estilo: "normal" },
+    { texto: "- Para 6 horas: digite 06:00 ou 0,25 (6/24)", estilo: "normal" },
+    { texto: "- Para 8 horas: digite 08:00 ou 0,333 (8/24)", estilo: "normal" },
+    { texto: "- Ao alterar, todas as horas extras serão recalculadas", estilo: "normal" },
     { texto: "", estilo: "normal" },
     { texto: "JUSTIFICATIVAS DISPONÍVEIS:", estilo: "subtitulo" },
     ...JUSTIFICATIVAS.map(j => ({ texto: `- ${j}`, estilo: "normal" as const })),
@@ -1090,12 +1151,6 @@ function criarAbaInstrucoesExcel(workbook: ExcelJS.Workbook): void {
     { texto: "- 15/11: Proclamação da República", estilo: "normal" },
     { texto: "- 25/12: Natal", estilo: "normal" },
     { texto: "- Carnaval, Sexta-feira Santa, Corpus Christi (datas móveis)", estilo: "normal" },
-    { texto: "", estilo: "normal" },
-    { texto: "DICAS IMPORTANTES:", estilo: "subtitulo" },
-    { texto: "1. Altere a jornada na célula H3 se necessário (ex: 06:00 para 6 horas)", estilo: "normal" },
-    { texto: "2. Preencha a coluna JUSTIFICATIVA para dias sem registro", estilo: "normal" },
-    { texto: "3. Use a aba RESUMO para visão geral de todos os funcionários", estilo: "normal" },
-    { texto: "4. Os horários podem ser editados e os cálculos atualizam automaticamente", estilo: "normal" },
   ]
   
   linhas.forEach((item, idx) => {
