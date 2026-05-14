@@ -676,48 +676,41 @@ export async function gerarTabelaDadosExcel(
       cellSemana.value = diaSemanaStr
       Object.assign(cellSemana, estiloBase)
       
+      // Função auxiliar para converter horário "HH:MM" para valor numérico do Excel
+      // No Excel, 1 dia = 1.0, então 1 hora = 1/24, 1 minuto = 1/(24*60)
+      const horarioParaExcel = (horario: string): number | string => {
+        if (!horario) return ""
+        const [h, m] = horario.split(":").map(Number)
+        if (isNaN(h) || isNaN(m)) return ""
+        return (h * 60 + m) / (24 * 60)
+      }
+      
       // Coluna C: ENTRADA 1 (formato hora)
       const cellEntrada1 = row.getCell(3)
-      if (entrada1) {
-        const [h, m] = entrada1.split(":").map(Number)
-        cellEntrada1.value = new Date(1899, 11, 30, h, m)
-        cellEntrada1.numFmt = "HH:MM"
-      } else {
-        cellEntrada1.value = ""
-      }
+      const valorE1 = horarioParaExcel(entrada1)
+      cellEntrada1.value = valorE1
+      if (valorE1 !== "") cellEntrada1.numFmt = "HH:MM"
       Object.assign(cellEntrada1, estiloBase)
       
       // Coluna D: SAÍDA ALM (formato hora)
       const cellSaida1 = row.getCell(4)
-      if (saida1) {
-        const [h, m] = saida1.split(":").map(Number)
-        cellSaida1.value = new Date(1899, 11, 30, h, m)
-        cellSaida1.numFmt = "HH:MM"
-      } else {
-        cellSaida1.value = ""
-      }
+      const valorS1 = horarioParaExcel(saida1)
+      cellSaida1.value = valorS1
+      if (valorS1 !== "") cellSaida1.numFmt = "HH:MM"
       Object.assign(cellSaida1, estiloBase)
       
       // Coluna E: ENTRADA 2 (formato hora)
       const cellEntrada2 = row.getCell(5)
-      if (entrada2) {
-        const [h, m] = entrada2.split(":").map(Number)
-        cellEntrada2.value = new Date(1899, 11, 30, h, m)
-        cellEntrada2.numFmt = "HH:MM"
-      } else {
-        cellEntrada2.value = ""
-      }
+      const valorE2 = horarioParaExcel(entrada2)
+      cellEntrada2.value = valorE2
+      if (valorE2 !== "") cellEntrada2.numFmt = "HH:MM"
       Object.assign(cellEntrada2, estiloBase)
       
       // Coluna F: SAÍDA (formato hora)
       const cellSaida2 = row.getCell(6)
-      if (saida2) {
-        const [h, m] = saida2.split(":").map(Number)
-        cellSaida2.value = new Date(1899, 11, 30, h, m)
-        cellSaida2.numFmt = "HH:MM"
-      } else {
-        cellSaida2.value = ""
-      }
+      const valorS2 = horarioParaExcel(saida2)
+      cellSaida2.value = valorS2
+      if (valorS2 !== "") cellSaida2.numFmt = "HH:MM"
       Object.assign(cellSaida2, estiloBase)
       
       // Coluna G: TOTAL HORAS (FÓRMULA EXCEL)
@@ -1118,7 +1111,7 @@ function criarAbaInstrucoesExcel(workbook: ExcelJS.Workbook): void {
     { texto: "- VERDE: Quando preencher todos os 4 horários (entrada, saída almoço, entrada, saída)", estilo: "normal" },
     { texto: "- AMARELO: Quando preencher parcialmente (falta algum horário)", estilo: "normal" },
     { texto: "- VERMELHO: Quando dia útil estiver sem nenhum horário", estilo: "normal" },
-    { texto: "- ROXO: Feriados e fins de semana (não muda com edição)", estilo: "normal" },
+    { texto: "- ROXO: Feriados e fins de semana (não muda com edi��ão)", estilo: "normal" },
     { texto: "", estilo: "normal" },
     { texto: "CÁLCULOS (fórmulas Excel):", estilo: "subtitulo" },
     { texto: "- Total de horas = (Saída - Entrada1) - (Entrada2 - Saída Almoço)", estilo: "normal" },
