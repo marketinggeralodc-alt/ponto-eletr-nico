@@ -433,14 +433,13 @@ export function processarRelogio(workbook: XLSX.WorkBook): ResultadoProcessament
 // ============================================================================
 
 const JUSTIFICATIVAS = [
-  "ATESTADO MÉDICO",
-  "FÉRIAS", 
-  "FOLGA",
-  "LICENÇA",
-  "FALTA JUSTIFICADA",
-  "FALTA NÃO JUST.",
-  "TRABALHO EXT.",
-  "HOME OFFICE",
+  "Aguardando Contratação",
+  "Atestado",
+  "Feriado",
+  "Férias",
+  "Folga Aniversário",
+  "Licença",
+  "Recisão",
 ]
 
 // Cores do tema
@@ -726,19 +725,23 @@ export async function gerarTabelaDadosExcel(
       cellTotal.font = { size: 10, bold: true, color: { argb: "FF" + corTexto } }
       
       // Coluna H: HORAS EXTRAS (FÓRMULA EXCEL)
+      // Se tem justificativa na coluna J, retorna 0 (não desconta)
       // Para fds/feriado: igual ao total
-      // Para dia normal: total - jornada (H3 agora é valor numérico)
+      // Para dia normal: total - jornada (H3)
       const cellExtras = row.getCell(8)
       if (isFimDeSemanaOuFeriado) {
         // Fim de semana/feriado: todas as horas são extras
+        // Se tem justificativa, retorna 0
         cellExtras.value = { 
-          formula: `IF(G${rowNum}<>"",G${rowNum},"")`,
+          formula: `IF(J${rowNum}<>"",0,IF(G${rowNum}<>"",G${rowNum},""))`,
           date1904: false
         }
       } else {
-        // Dia normal: total - jornada (H3 é valor numérico de hora)
+        // Dia normal: total - jornada
+        // Se tem justificativa, retorna 0 (anula as horas negativas)
+        // Se não tem registro MAS tem justificativa, não desconta
         cellExtras.value = { 
-          formula: `IF(G${rowNum}<>"",G${rowNum}-$H$3,"")`,
+          formula: `IF(J${rowNum}<>"",0,IF(G${rowNum}<>"",G${rowNum}-$H$3,IF(AND(C${rowNum}="",F${rowNum}=""),-$H$3,"")))`,
           date1904: false
         }
       }
@@ -751,13 +754,23 @@ export async function gerarTabelaDadosExcel(
       cellStatus.value = status
       Object.assign(cellStatus, estiloBase)
       
-      // Coluna J: JUSTIFICATIVA (editável)
+      // Coluna J: JUSTIFICATIVA (com dropdown)
       const cellJust = row.getCell(10)
       cellJust.value = ""
       cellJust.font = { size: 9, color: { argb: "FF" + CORES.PRETO } }
       cellJust.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + CORES.BRANCO } }
       cellJust.alignment = { horizontal: "center", vertical: "middle" }
       cellJust.border = getBorder()
+      
+      // Adiciona validação de dados (dropdown) para justificativas
+      cellJust.dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [`"${JUSTIFICATIVAS.join(",")}"`],
+        showDropDown: false, // false = mostra a seta do dropdown
+        prompt: "Selecione uma justificativa",
+        promptTitle: "Justificativa",
+      }
       
       // Coluna K: OBSERVAÇÃO
       const cellObs = row.getCell(11)
@@ -799,7 +812,7 @@ export async function gerarTabelaDadosExcel(
     cellSomaTotal.numFmt = "[H]:MM"
     Object.assign(cellSomaTotal, estiloTotais)
     
-    // H: SOMA das horas extras (FÓRMULA)
+    // H: SOMA das horas extras (FÓRMULA) - já considera justificativas pois H retorna 0 quando tem justificativa
     const cellSomaExtras = totaisRow.getCell(8)
     cellSomaExtras.value = { formula: `SUM(H${linhaInicioDados}:H${linhaFimDados})` }
     cellSomaExtras.numFmt = "[H]:MM;-[H]:MM"
@@ -1105,34 +1118,32 @@ function criarAbaInstrucoesExcel(workbook: ExcelJS.Workbook): void {
     { texto: "- As colunas TOTAL e EXTRAS contêm fórmulas que calculam automaticamente", estilo: "normal" },
     { texto: "- Ao editar os horários manualmente, os cálculos serão atualizados", estilo: "normal" },
     { texto: "- A jornada padrão está na célula H3 e pode ser alterada", estilo: "normal" },
-    { texto: "- Os totais no final usam SOMA e CONT.SE para calcular automaticamente", estilo: "normal" },
+    { texto: "- Os totais no final usam SOMA para calcular automaticamente", estilo: "normal" },
     { texto: "", estilo: "normal" },
-    { texto: "FORMATAÇÃO CONDICIONAL (cores automáticas):", estilo: "subtitulo" },
-    { texto: "- VERDE: Quando preencher todos os 4 horários (entrada, saída almoço, entrada, saída)", estilo: "normal" },
-    { texto: "- AMARELO: Quando preencher parcialmente (falta algum horário)", estilo: "normal" },
-    { texto: "- VERMELHO: Quando dia útil estiver sem nenhum horário", estilo: "normal" },
-    { texto: "- ROXO: Feriados e fins de semana (não muda com edi��ão)", estilo: "normal" },
+    { texto: "HORAS NEGATIVAS (devendo):", estilo: "subtitulo" },
+    { texto: "- Quando trabalha menos que a jornada, aparece valor NEGATIVO (ex: -0:20)", estilo: "normal" },
+    { texto: "- Dias sem registro em dias úteis mostram -8:00 (ou a jornada negativa)", estilo: "normal" },
+    { texto: "- O total de EXTRAS soma positivos e negativos do mês", estilo: "normal" },
     { texto: "", estilo: "normal" },
-    { texto: "CÁLCULOS (fórmulas Excel):", estilo: "subtitulo" },
-    { texto: "- Total de horas = (Saída - Entrada1) - (Entrada2 - Saída Almoço)", estilo: "normal" },
-    { texto: "- Horas extras em dias normais = Total - Jornada (célula H3)", estilo: "normal" },
-    { texto: "- Horas extras em fins de semana/feriados = Total (todas são extras)", estilo: "normal" },
-    { texto: "- Valores NEGATIVOS indicam horas faltantes (devendo)", estilo: "normal" },
-    { texto: "", estilo: "normal" },
-    { texto: "COMO PREENCHER MANUALMENTE:", estilo: "subtitulo" },
-    { texto: "- Digite os horários no formato HH:MM (ex: 08:00, 12:00, 13:00, 17:00)", estilo: "normal" },
-    { texto: "- O Excel converterá automaticamente para o formato de hora", estilo: "normal" },
-    { texto: "- Os cálculos de TOTAL e EXTRAS serão atualizados automaticamente", estilo: "normal" },
-    { texto: "- As CORES mudarão automaticamente conforme você preencher", estilo: "normal" },
-    { texto: "", estilo: "normal" },
-    { texto: "COMO ALTERAR A JORNADA:", estilo: "subtitulo" },
-    { texto: "- A jornada está na célula H3 de cada aba de funcionário", estilo: "normal" },
-    { texto: "- Para 6 horas: digite 06:00 ou 0,25 (6/24)", estilo: "normal" },
-    { texto: "- Para 8 horas: digite 08:00 ou 0,333 (8/24)", estilo: "normal" },
-    { texto: "- Ao alterar, todas as horas extras serão recalculadas", estilo: "normal" },
+    { texto: "JUSTIFICATIVAS (anulam horas negativas):", estilo: "subtitulo" },
+    { texto: "- Selecione uma justificativa na coluna JUSTIFICATIVA", estilo: "normal" },
+    { texto: "- Quando uma justificativa é selecionada, as horas daquele dia viram 0", estilo: "normal" },
+    { texto: "- Isso evita que faltas justificadas descontem do total", estilo: "normal" },
     { texto: "", estilo: "normal" },
     { texto: "JUSTIFICATIVAS DISPONÍVEIS:", estilo: "subtitulo" },
     ...JUSTIFICATIVAS.map(j => ({ texto: `- ${j}`, estilo: "normal" as const })),
+    { texto: "", estilo: "normal" },
+    { texto: "FORMATAÇÃO CONDICIONAL (cores automáticas):", estilo: "subtitulo" },
+    { texto: "- VERDE: Quando preencher todos os 4 horários", estilo: "normal" },
+    { texto: "- AMARELO: Quando preencher parcialmente", estilo: "normal" },
+    { texto: "- VERMELHO: Quando dia útil estiver sem registro", estilo: "normal" },
+    { texto: "- ROXO: Feriados e fins de semana", estilo: "normal" },
+    { texto: "", estilo: "normal" },
+    { texto: "COMO ALTERAR A JORNADA:", estilo: "subtitulo" },
+    { texto: "- A jornada está na célula H3 de cada aba de funcionário", estilo: "normal" },
+    { texto: "- Para 6 horas: digite 06:00", estilo: "normal" },
+    { texto: "- Para 8 horas: digite 08:00 (padrão)", estilo: "normal" },
+    { texto: "- Ao alterar, todas as horas extras serão recalculadas", estilo: "normal" },
     { texto: "", estilo: "normal" },
     { texto: "FERIADOS CONSIDERADOS:", estilo: "subtitulo" },
     { texto: "- 01/01: Confraternização Universal", estilo: "normal" },
