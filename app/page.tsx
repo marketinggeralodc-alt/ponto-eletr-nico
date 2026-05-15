@@ -5,7 +5,7 @@ import * as XLSX from "xlsx"
 import { FileUpload } from "@/components/file-upload"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { processarRelogio, gerarTabelaDados, type DadosPonto } from "@/lib/ponto-utils"
+import { processarRelogio, gerarTabelaDadosExcel, type DadosPonto } from "@/lib/ponto-utils"
 import { Download, Clock, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Users, Calendar, Info, ChevronDown, ChevronUp } from "lucide-react"
 
 type Step = "upload" | "preview" | "result"
@@ -23,7 +23,7 @@ export default function PontoPage() {
   const [relogioFile, setRelogioFile] = useState<File | null>(null)
   const [processing, setProcessing] = useState(false)
   const [previewData, setPreviewData] = useState<ProcessingResult | null>(null)
-  const [finalWorkbook, setFinalWorkbook] = useState<XLSX.WorkBook | null>(null)
+  const [finalBuffer, setFinalBuffer] = useState<Buffer | null>(null)
   const [showDebug, setShowDebug] = useState(false)
 
   const handleProcessar = useCallback(async () => {
@@ -54,14 +54,14 @@ export default function PontoPage() {
     setProcessing(false)
   }, [relogioFile])
 
-  const handleGerarTabela = useCallback(() => {
+  const handleGerarTabela = useCallback(async () => {
     if (!previewData || previewData.dados.length === 0) return
 
     setProcessing(true)
 
     try {
-      const workbook = gerarTabelaDados(previewData.dados, previewData.mesAno)
-      setFinalWorkbook(workbook)
+      const buffer = await gerarTabelaDadosExcel(previewData.dados, previewData.mesAno)
+      setFinalBuffer(buffer)
       setStep("result")
     } catch (error) {
       console.error("[v0] Erro ao gerar tabela:", error)
@@ -71,26 +71,25 @@ export default function PontoPage() {
   }, [previewData])
 
   const handleDownload = useCallback(() => {
-    if (!finalWorkbook) return
+    if (!finalBuffer) return
 
-    const wbout = XLSX.write(finalWorkbook, { bookType: "xlsx", type: "array" })
-    const blob = new Blob([wbout], { type: "application/octet-stream" })
+    const blob = new Blob([finalBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
     const url = URL.createObjectURL(blob)
 
     const a = document.createElement("a")
     a.href = url
-    a.download = `Dados_Ponto_${previewData?.mesAno?.replace("/", "-") || "extraidos"}.xlsx`
+    a.download = `Ponto_${previewData?.mesAno?.replace("/", "-") || "extraidos"}.xlsx`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }, [finalWorkbook, previewData?.mesAno])
+  }, [finalBuffer, previewData?.mesAno])
 
   const handleReset = useCallback(() => {
     setStep("upload")
     setRelogioFile(null)
     setPreviewData(null)
-    setFinalWorkbook(null)
+    setFinalBuffer(null)
     setShowDebug(false)
   }, [])
 
@@ -106,7 +105,7 @@ export default function PontoPage() {
             <h1 className="text-2xl font-bold text-foreground">Extrator de Ponto</h1>
           </div>
           <p className="text-muted-foreground">
-            Extraia os dados do relógio e gere uma tabela para usar com PROCV no Excel
+            Extraia os dados do relógio e gere uma planilha completa com cálculo de horas extras
           </p>
         </div>
 
@@ -171,8 +170,8 @@ export default function PontoPage() {
                     <p className="font-medium">Como funciona:</p>
                     <ol className="mt-2 list-inside list-decimal space-y-1 text-blue-700 dark:text-blue-300">
                       <li>Faça upload do arquivo do relógio de ponto</li>
-                      <li>O sistema extrai os horários de cada funcionário</li>
-                      <li>Baixe a tabela de dados e use com PROCV no Excel</li>
+                      <li>O sistema extrai e calcula horas trabalhadas/extras</li>
+                      <li>Baixe a planilha completa com alertas e observações</li>
                     </ol>
                   </div>
                 </div>
@@ -327,6 +326,24 @@ export default function PontoPage() {
                 </div>
               )}
 
+              {/* Info sobre funcionalidades */}
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <div className="text-sm text-emerald-800 dark:text-emerald-200">
+                    <p className="font-medium">A planilha inteligente incluirá:</p>
+                    <ul className="mt-2 list-inside list-disc space-y-1 text-emerald-700 dark:text-emerald-300">
+                      <li>Fórmulas Excel para cálculos automáticos editáveis</li>
+                      <li>Cores: verde (OK), vermelho (falta), amarelo (alerta), roxo (feriado)</li>
+                      <li>Coluna de justificativas para faltas (atestado, férias, etc.)</li>
+                      <li>Identificação automática de dias sem registro</li>
+                      <li>Alertas de almoço menor que 1 hora</li>
+                      <li>Resumo geral com totais de todos funcionários</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
               {/* Debug logs toggle */}
               {previewData.debug.length > 0 && (
                 <div className="rounded-lg border bg-muted/50 p-4">
@@ -382,7 +399,7 @@ export default function PontoPage() {
                 <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                 Tabela Gerada com Sucesso
               </CardTitle>
-              <CardDescription>Baixe a tabela e use com PROCV no Excel</CardDescription>
+              <CardDescription>Baixe a planilha inteligente com fórmulas e cores</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
               {/* Stats */}
@@ -396,39 +413,54 @@ export default function PontoPage() {
                 </div>
               </div>
 
-              {/* Info sobre o arquivo */}
+              {/* Legenda de cores */}
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
                 <div className="flex items-start gap-2">
                   <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
                   <div className="text-sm text-blue-800 dark:text-blue-200">
-                    <p className="font-medium">O arquivo contém:</p>
-                    <ul className="mt-2 list-inside list-disc space-y-1 text-blue-700 dark:text-blue-300">
-                      <li>Aba &quot;Dados_Ponto&quot; com todos os registros</li>
-                      <li>Aba &quot;Instrucoes&quot; com fórmulas PROCV prontas</li>
-                      <li>Uma aba para cada funcionário com seus horários</li>
-                    </ul>
+                    <p className="font-medium">Legenda de Cores na Planilha:</p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-blue-700 dark:text-blue-300">
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-green-400"></span>
+                        <span>Verde = Dia OK</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-red-400"></span>
+                        <span>Vermelho = Sem registro</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-yellow-400"></span>
+                        <span>Amarelo = Alerta/Incompleto</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-purple-400"></span>
+                        <span>Roxo = Feriado/Fim de semana</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Instruções rápidas */}
+              {/* Funcionalidades */}
               <div className="rounded-lg bg-muted p-4">
-                <h3 className="mb-2 font-medium">Como usar no Excel:</h3>
-                <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
-                  <li>Abra sua folha de ponto original</li>
-                  <li>Cole a aba &quot;Dados_Ponto&quot; em uma nova aba</li>
-                  <li>Use PROCV para buscar os horários automaticamente</li>
-                  <li>Veja a aba &quot;Instrucoes&quot; para exemplos de fórmulas</li>
-                </ol>
+                <h3 className="mb-2 font-medium">Funcionalidades da planilha inteligente:</h3>
+                <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
+                  <li>Fórmulas Excel editáveis (altere horários e os cálculos atualizam)</li>
+                  <li>Coluna de justificativa para faltas (atestado, férias, folga, etc.)</li>
+                  <li>Jornada configurável (padrão 8h, editável na célula H3)</li>
+                  <li>Aba RESUMO com totais e referências às abas individuais</li>
+                  <li>Campos para assinatura do funcionário e responsável</li>
+                  <li>Aba Dados_PROCV para integração com outras planilhas</li>
+                </ul>
               </div>
 
               <div className="flex gap-3">
                 <Button variant="outline" onClick={handleReset} className="flex-1">
                   Processar Outro Arquivo
                 </Button>
-                <Button onClick={handleDownload} disabled={!finalWorkbook} className="flex-1">
+                <Button onClick={handleDownload} disabled={!finalBuffer} className="flex-1 bg-emerald-600 hover:bg-emerald-700">
                   <Download className="mr-2 h-4 w-4" />
-                  Baixar Tabela
+                  Baixar Planilha Inteligente
                 </Button>
               </div>
             </CardContent>
